@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -74,10 +75,22 @@ WSGI_APPLICATION = 'hotelplatformapi.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
+
+    # 'default': dj_database_url.config(
+    #     default=os.getenv('DATABASE_URL'),
+    #     conn_max_age=600,
+    #     ssl_require=True
+    # )
+
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'hoteldb',
+        'USER': 'root',
+        'PASSWORD': 'Admin@123',
+        # 'PASSWORD': 'ThanhNam*1909',
+        'HOST': '' # mặc định localhost
     }
+
 }
 
 
@@ -121,3 +134,24 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+
+AUTH_USER_MODEL = 'hotelplatform.User'
+
+import cloudinary
+cloudinary.config(
+
+    # cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
+    # api_key=os.getenv('CLOUDINARY_API_KEY'),
+    # api_secret=os.getenv('CLOUDINARY_API_SECRET'),
+
+    cloud_name="dncgine9e",
+    api_key="257557947612624",
+    api_secret="88EDQ7-Ltwzn1oaI4tT_UIb_bWI",
+
+    secure=True
+)
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+
+STATICFILES_STORAGE = 'cloudinary_storage.storage.StaticCloudinaryStorage'

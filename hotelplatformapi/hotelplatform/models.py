@@ -20,7 +20,7 @@ class UserManager(BaseUserManager):
         return user
 
     def create_superuser(self, username, email, password=None, **extra_fields):
-        extra_fields.setdefault('role', 'hotel_owner')
+        extra_fields.setdefault('role', 'admin')
         extra_fields.setdefault('is_active', True)
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
@@ -28,15 +28,29 @@ class UserManager(BaseUserManager):
 
 # Loại khách hàng
 class CustomerType(models.TextChoices):
-    DOMESTIC = 'domestic', 'Khách nội địa'
-    FOREIGN = 'foreign', 'Khách nước ngoài'
+    NEW = 'new', 'Khách hàng mới'
+    REGULAR = 'regular', 'Khách phổ thông'
+    VIP = 'vip', 'Khách VIP'
+    SUPER_VIP = 'super_vip', 'Khách siêu VIP'
+    UNKNOWN = 'unknown', 'Không xác định'
+
+# Trạng thái đặt phòng
+class BookingStatus(models.TextChoices):
+    PENDING = 'pending', 'Chờ xác nhận'
+    CONFIRMED = 'confirmed', 'Đã xác nhận'
+    CHECKED_IN = 'checked_in', 'Đã nhận phòng'
+    CHECKED_OUT = 'checked_out', 'Đã trả phòng'
+    CANCELLED = 'cancelled', 'Đã hủy'
+    NO_SHOW = 'no_show', 'Không xuất hiện'
 
 # Vai trò người dùng
 class User(AbstractBaseUser, PermissionsMixin):
     ROLE_CHOICES = (
-        ('customer', 'Khách hàng'),
+        ('admin', 'Quản trị viên'),        
         ('owner', 'Chủ khách sạn'),
         ('staff', 'Nhân viên'),
+        ('customer', 'Khách hàng'),
+
     )
 
     username = models.CharField(max_length=255, unique=True, db_index=True)
@@ -74,7 +88,6 @@ class RoomType(models.Model):
     base_price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0'))])
     max_guests = models.PositiveIntegerField(default=3)
     extra_guest_surcharge = models.DecimalField(max_digits=5, decimal_places=2, default=25.00)  # Phụ thu 25% cho khách thứ 3
-    foreign_guest_multiplier = models.DecimalField(max_digits=4, decimal_places=2, default=1.50)  # Hệ số 1.5 cho khách nước ngoài
     amenities = models.TextField(null=True, blank=True)  # Tiện nghi: wifi, điều hòa, hồ bơi...
 
     def __str__(self):
@@ -109,6 +122,9 @@ class Booking(models.Model):
     check_in_date = models.DateTimeField()
     check_out_date = models.DateTimeField()
     total_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0'))])
+    guest_count = models.PositiveIntegerField(validators=[MinValueValidator(1)])  # Tối thiểu 1 khách
+    status = models.CharField(max_length=20, choices=BookingStatus.choices, default=BookingStatus.PENDING)
+    special_requests = models.TextField(null=True, blank=True)  # Yêu cầu đặc biệt
     qr_code = CloudinaryField('qr_code', null=True, blank=True)  # Lưu mã QR
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -153,10 +169,14 @@ class RoomRental(models.Model):
     booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='rentals', null=True, blank=True)
     customer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='rentals', limit_choices_to={'role': 'customer'})
     rooms = models.ManyToManyField(Room, related_name='rentals')
-    check_in_date = models.DateTimeField()
+    check_in_date = models.DateTimeField(auto_now_add=True)
     check_out_date = models.DateTimeField()
-    guest_count = models.PositiveIntegerField(validators=[MaxValueValidator(3)])  # Tối đa 3 khách/phòng
-    guest_type = models.CharField(max_length=20, choices=CustomerType.choices, default=CustomerType.DOMESTIC)
+    total_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0'))])
+    # total_price: Giá thực tế, tính toán khi check-out, dựa trên:
+    # Thời gian lưu trú thực tế (check_out_date - check_in_date).
+    # Số lượng khách thực tế (guest_count).
+    # Phụ thu từ RoomType.extra_guest_surcharge (n% cho khách thứ x).
+    guest_count = models.PositiveIntegerField(validators=[MinValueValidator(1)])
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -183,9 +203,11 @@ class RoomRental(models.Model):
             room.save()
 
 # Thanh toán
+# Được tạo khi khách check-out,Trường amount lưu tổng số tiền thanh toán cuối cùng, 
+# dựa trên total_price của RoomRental, có thể điều chỉnh thêm nếu áp dụng mã giảm giá (discount_code).
 class Payment(models.Model):
     PAYMENT_METHOD_CHOICES = (
-        ('momo', 'MoMo'),
+        ('stripe', 'Stripe'),
         ('vnpay', 'VNPay'),
         ('cash', 'Tiền mặt'),
     )
@@ -194,7 +216,7 @@ class Payment(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0'))])
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES)
     status = models.BooleanField(default=False)
-    paid_at = models.DateTimeField(null=True, blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True) # Ngày giờ thanh toán, viết hàm tự động cập nhật khi status=True
     transaction_id = models.CharField(max_length=255, unique=True)
     discount_code = models.ForeignKey('DiscountCode', on_delete=models.SET_NULL, null=True, blank=True, related_name='payments')
 
@@ -228,35 +250,35 @@ class Payment(models.Model):
 #     def __str__(self):
 #         return f"Đánh giá của {self.customer} - {self.rating} sao"
 
-# # Mã giảm giá
-# class DiscountCode(models.Model):
-#     code = models.CharField(max_length=50, unique=True, db_index=True)
-#     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))])
-#     valid_from = models.DateTimeField()
-#     valid_to = models.DateTimeField()
-#     max_uses = models.PositiveIntegerField(null=True, blank=True)
-#     used_count = models.PositiveIntegerField(default=0)
-#     is_active = models.BooleanField(default=True)
-#
-#     class Meta:
-#         constraints = [
-#             models.CheckConstraint(
-#                 check=models.Q(valid_from__lte=models.F('valid_to')),
-#                 name='valid_from_before_valid_to'
-#             ),
-#         ]
-#         indexes = [
-#             models.Index(fields=['code', 'is_active']),
-#         ]
-#
-#     def __str__(self):
-#         return self.code
-#
-#     def is_valid(self):
-#         now = timezone.now()
-#         if self.valid_from <= now <= self.valid_to and (self.max_uses is None or self.used_count < self.max_uses):
-#             return True
-#         return False
+# Mã giảm giá
+class DiscountCode(models.Model):
+    code = models.CharField(max_length=50, unique=True, db_index=True)
+    discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))])
+    valid_from = models.DateTimeField()
+    valid_to = models.DateTimeField()
+    max_uses = models.PositiveIntegerField(null=True, blank=True)
+    used_count = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(valid_from__lte=models.F('valid_to')),
+                name='valid_from_before_valid_to'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['code', 'is_active']),
+        ]
+
+    def __str__(self):
+        return self.code
+
+    def is_valid(self):
+        now = timezone.now()
+        if self.valid_from <= now <= self.valid_to and (self.max_uses is None or self.used_count < self.max_uses):
+            return True
+        return False
 
 # Thông báo
 class Notification(models.Model):
@@ -301,19 +323,3 @@ class Notification(models.Model):
 #     def __str__(self):
 #         return f"Tin nhắn từ {self.sender} đến {self.receiver or 'nhóm'}"
 
-# Nhật ký thống kê phòng
-class RoomUsageLog(models.Model):
-    room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='usage_logs')
-    month = models.DateField()  # Tháng thống kê
-    days_occupied = models.PositiveIntegerField(default=0)
-    revenue = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    usage_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)  # Tỷ lệ sử dụng (%)
-
-    class Meta:
-        unique_together = ('room', 'month')
-        indexes = [
-            models.Index(fields=['room', 'month']),
-        ]
-
-    def __str__(self):
-        return f"Thống kê phòng {self.room} - {self.month.strftime('%Y-%m')}"
