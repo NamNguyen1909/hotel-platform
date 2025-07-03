@@ -35,7 +35,7 @@ class CustomerType(models.TextChoices):
 class User(AbstractBaseUser, PermissionsMixin):
     ROLE_CHOICES = (
         ('customer', 'Khách hàng'),
-        ('hotel_owner', 'Chủ khách sạn'),
+        ('owner', 'Chủ khách sạn'),
         ('staff', 'Nhân viên'),
     )
 
@@ -56,7 +56,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     objects = UserManager()
 
     USERNAME_FIELD = 'username'
-    REQUIRED_FIELDS = ['email', 'full_name']
+    REQUIRED_FIELDS = ['email', 'full_name','id_card','phone','role']
 
     class Meta:
         indexes = [
@@ -212,51 +212,51 @@ class Payment(models.Model):
     def __str__(self):
         return f"Thanh toán {self.transaction_id} - {self.amount}"
 
-# Đánh giá
-class Review(models.Model):
-    rental = models.ForeignKey(RoomRental, on_delete=models.CASCADE, related_name='reviews')
-    customer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reviews', limit_choices_to={'role': 'customer'})
-    rating = models.PositiveIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
-    comment = models.TextField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+# # Đánh giá
+# class Review(models.Model):
+#     rental = models.ForeignKey(RoomRental, on_delete=models.CASCADE, related_name='reviews')
+#     customer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reviews', limit_choices_to={'role': 'customer'})
+#     rating = models.PositiveIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
+#     comment = models.TextField(null=True, blank=True)
+#     created_at = models.DateTimeField(auto_now_add=True)
+#
+#     class Meta:
+#         indexes = [
+#             models.Index(fields=['rental', 'customer']),
+#         ]
+#
+#     def __str__(self):
+#         return f"Đánh giá của {self.customer} - {self.rating} sao"
 
-    class Meta:
-        indexes = [
-            models.Index(fields=['rental', 'customer']),
-        ]
-
-    def __str__(self):
-        return f"Đánh giá của {self.customer} - {self.rating} sao"
-
-# Mã giảm giá
-class DiscountCode(models.Model):
-    code = models.CharField(max_length=50, unique=True, db_index=True)
-    discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))])
-    valid_from = models.DateTimeField()
-    valid_to = models.DateTimeField()
-    max_uses = models.PositiveIntegerField(null=True, blank=True)
-    used_count = models.PositiveIntegerField(default=0)
-    is_active = models.BooleanField(default=True)
-
-    class Meta:
-        constraints = [
-            models.CheckConstraint(
-                check=models.Q(valid_from__lte=models.F('valid_to')),
-                name='valid_from_before_valid_to'
-            ),
-        ]
-        indexes = [
-            models.Index(fields=['code', 'is_active']),
-        ]
-
-    def __str__(self):
-        return self.code
-
-    def is_valid(self):
-        now = timezone.now()
-        if self.valid_from <= now <= self.valid_to and (self.max_uses is None or self.used_count < self.max_uses):
-            return True
-        return False
+# # Mã giảm giá
+# class DiscountCode(models.Model):
+#     code = models.CharField(max_length=50, unique=True, db_index=True)
+#     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))])
+#     valid_from = models.DateTimeField()
+#     valid_to = models.DateTimeField()
+#     max_uses = models.PositiveIntegerField(null=True, blank=True)
+#     used_count = models.PositiveIntegerField(default=0)
+#     is_active = models.BooleanField(default=True)
+#
+#     class Meta:
+#         constraints = [
+#             models.CheckConstraint(
+#                 check=models.Q(valid_from__lte=models.F('valid_to')),
+#                 name='valid_from_before_valid_to'
+#             ),
+#         ]
+#         indexes = [
+#             models.Index(fields=['code', 'is_active']),
+#         ]
+#
+#     def __str__(self):
+#         return self.code
+#
+#     def is_valid(self):
+#         now = timezone.now()
+#         if self.valid_from <= now <= self.valid_to and (self.max_uses is None or self.used_count < self.max_uses):
+#             return True
+#         return False
 
 # Thông báo
 class Notification(models.Model):
@@ -285,21 +285,21 @@ class Notification(models.Model):
         return self.title
 
 # Tin nhắn trò chuyện
-class ChatMessage(models.Model):
-    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_messages')
-    receiver = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='received_messages')
-    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, null=True, blank=True, related_name='chat_messages')
-    message = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        indexes = [
-            models.Index(fields=['booking', 'created_at']),
-            models.Index(fields=['receiver', 'created_at']),
-        ]
-
-    def __str__(self):
-        return f"Tin nhắn từ {self.sender} đến {self.receiver or 'nhóm'}"
+# class ChatMessage(models.Model):
+#     sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_messages')
+#     receiver = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='received_messages')
+#     booking = models.ForeignKey(Booking, on_delete=models.CASCADE, null=True, blank=True, related_name='chat_messages')
+#     message = models.TextField()
+#     created_at = models.DateTimeField(auto_now_add=True)
+#
+#     class Meta:
+#         indexes = [
+#             models.Index(fields=['booking', 'created_at']),
+#             models.Index(fields=['receiver', 'created_at']),
+#         ]
+#
+#     def __str__(self):
+#         return f"Tin nhắn từ {self.sender} đến {self.receiver or 'nhóm'}"
 
 # Nhật ký thống kê phòng
 class RoomUsageLog(models.Model):
