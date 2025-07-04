@@ -2,6 +2,7 @@ asgiref==3.8.1
 certifi==2025.6.15
 cloudinary==1.44.1
 Django==5.2.4
+djangorestframework==3.15.2
 six==1.17.0
 sqlparse==0.5.3
 tzdata==2025.2
