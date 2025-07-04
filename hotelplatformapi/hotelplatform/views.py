@@ -6,9 +6,738 @@ from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import urllib
 
+# REST Framework imports
+from rest_framework import viewsets, status, generics
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.views import APIView
+from rest_framework.filters import SearchFilter, OrderingFilter
+from django_filters.rest_framework import DjangoFilterBackend
+
+# Django imports
+from django.utils import timezone
+from django.db import transaction
+from django.db.models import Q, Sum, Count, Avg
+from django.shortcuts import get_object_or_404
+
+# Local imports
+from .models import (
+    User, RoomType, Room, Booking, RoomRental, Payment, DiscountCode, Notification,
+    BookingStatus
+)
+from .serializers import (
+    UserSerializer, UserDetailSerializer, RoomTypeSerializer, RoomSerializer, RoomDetailSerializer,
+    BookingSerializer, BookingDetailSerializer, RoomRentalSerializer, RoomRentalDetailSerializer,
+    PaymentSerializer, DiscountCodeSerializer, NotificationSerializer
+)
+
+from datetime import datetime
+import hashlib
+import hmac
+from django.shortcuts import redirect, render
+from django.http import HttpResponse, JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+import urllib
+
+# REST Framework imports
+from rest_framework import viewsets, status, generics
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.views import APIView
+from rest_framework.filters import SearchFilter, OrderingFilter
+
+# Django imports
+from django.utils import timezone
+from django.db import transaction
+from django.db.models import Q, Sum, Count, Avg
+from django.shortcuts import get_object_or_404
+
+# Local imports
+from .models import (
+    User, RoomType, Room, Booking, RoomRental, Payment, DiscountCode, Notification,
+    BookingStatus
+)
+from .serializers import (
+    UserSerializer, UserDetailSerializer, RoomTypeSerializer, RoomSerializer, RoomDetailSerializer,
+    BookingSerializer, BookingDetailSerializer, RoomRentalSerializer, RoomRentalDetailSerializer,
+    PaymentSerializer, DiscountCodeSerializer, NotificationSerializer
+)
+from .permissions import (
+    IsAdminUser, IsOwnerUser, IsStaffUser, IsCustomerUser, IsAdminOrOwner, IsAdminOrOwnerOrStaff,
+    IsBookingOwner, IsRoomRentalOwner, IsPaymentOwner, IsNotificationOwner, CanManageRooms,
+    CanManageBookings, CanManagePayments, CanCreateDiscountCode, CanViewStats, CanCheckIn,
+    CanCheckOut, CanConfirmBooking, CanGenerateQRCode, CanUpdateProfile, CanCancelBooking,
+    CanCreateNotification, CanModifyRoomType, CanManageUsers
+)
+
 # Create your views here.
 def home(request):
     return HttpResponse('Welcome to Hotel Platform API!')
+
+
+# ================================ VIEWSETS ================================
+
+class UserViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
+    """
+    ViewSet quản lý User kết hợp với generics
+    """
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ['username', 'email', 'full_name', 'phone']
+    ordering_fields = ['created_at', 'updated_at']
+    ordering = ['-created_at']
+
+    def get_serializer_class(self):
+        if self.action in ['retrieve', 'profile']:
+            return UserDetailSerializer
+        return UserSerializer
+
+    def get_permissions(self):
+        if self.action in ['create']:
+            return [AllowAny()]
+        elif self.action in ['list']:
+            return [CanManageUsers()]
+        elif self.action in ['create_staff', 'staff_list']:
+            return [IsOwnerUser()]
+        elif self.action in ['update', 'partial_update', 'destroy']:
+            return [CanUpdateProfile()]
+        return [IsAuthenticated()]
+
+    def create(self, request):
+        """Tạo user mới"""
+        serializer = UserSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def update(self, request, pk=None):
+        """Cập nhật user"""
+        user = get_object_or_404(User, pk=pk)
+        serializer = UserSerializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response(UserDetailSerializer(user).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'])
+    def create_staff(self, request):
+        """Owner tạo staff account"""
+        data = request.data.copy()
+        data['role'] = 'staff'  # Auto set role staff
+        
+        serializer = UserSerializer(data=data)
+        if serializer.is_valid():
+            staff = serializer.save()
+            return Response({
+                'message': 'Staff account created successfully',
+                'staff': UserSerializer(staff).data
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['get'])
+    def staff_list(self, request):
+        """Owner xem danh sách staff"""
+        staff_users = User.objects.filter(role='staff')
+        serializer = UserSerializer(staff_users, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def profile(self, request):
+        """Lấy thông tin profile của user hiện tại"""
+        serializer = UserDetailSerializer(request.user)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['put'])
+    def update_profile(self, request):
+        """Cập nhật profile của user hiện tại"""
+        serializer = UserSerializer(request.user, data=request.data, partial=True)
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response(UserDetailSerializer(user).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class RoomTypeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
+    """
+    ViewSet quản lý RoomType
+    """
+    queryset = RoomType.objects.all()
+    serializer_class = RoomTypeSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ['name', 'description']
+    ordering_fields = ['base_price', 'max_guests', 'created_at']
+    ordering = ['base_price']
+
+    def create(self, request):
+        """Tạo room type mới (chỉ admin/owner)"""
+        serializer = RoomTypeSerializer(data=request.data)
+        if serializer.is_valid():
+            room_type = serializer.save()
+            return Response(RoomTypeSerializer(room_type).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [CanModifyRoomType()]
+        return [IsAuthenticated()]
+
+    def update(self, request, pk=None):
+        """Cập nhật room type"""
+        room_type = get_object_or_404(RoomType, pk=pk)
+        serializer = RoomTypeSerializer(room_type, data=request.data, partial=True)
+        if serializer.is_valid():
+            room_type = serializer.save()
+            return Response(RoomTypeSerializer(room_type).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class RoomViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
+    """
+    ViewSet quản lý Room
+    """
+    queryset = Room.objects.all()
+    serializer_class = RoomSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ['room_number', 'room_type__name']
+    ordering_fields = ['room_number', 'status', 'created_at']
+    ordering = ['room_number']
+
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return RoomDetailSerializer
+        return RoomSerializer
+
+    def get_queryset(self):
+        queryset = Room.objects.select_related('room_type').all()
+        
+        # Filter by status
+        status_filter = self.request.query_params.get('status', None)
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        
+        # Filter by room type
+        room_type = self.request.query_params.get('room_type', None)
+        if room_type:
+            queryset = queryset.filter(room_type__id=room_type)
+        
+        return queryset
+
+    def create(self, request):
+        """Tạo room mới (chỉ admin/owner)"""
+        serializer = RoomSerializer(data=request.data)
+        if serializer.is_valid():
+            room = serializer.save()
+            return Response(RoomSerializer(room).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def get_permissions(self):
+        if self.action in ['create']:
+            return [CanModifyRoomType()]
+        elif self.action in ['update', 'partial_update']:
+            return [CanManageRooms()]
+        return [IsAuthenticated()]
+
+    def update(self, request, pk=None):
+        """Cập nhật room"""
+        room = get_object_or_404(Room, pk=pk)
+        serializer = RoomSerializer(room, data=request.data, partial=True)
+        if serializer.is_valid():
+            room = serializer.save()
+            return Response(RoomDetailSerializer(room).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['get'])
+    def available(self, request):
+        """Lấy danh sách phòng còn trống"""
+        check_in = request.query_params.get('check_in')
+        check_out = request.query_params.get('check_out')
+        
+        if not check_in or not check_out:
+            return Response({"error": "Cần cung cấp check_in và check_out"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Logic tìm phòng trống
+        available_rooms = Room.objects.filter(status='available')
+        
+        serializer = RoomSerializer(available_rooms, many=True)
+        return Response(serializer.data)
+
+
+class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
+    """
+    ViewSet quản lý Booking
+    """
+    queryset = Booking.objects.all()
+    serializer_class = BookingSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ['customer__full_name', 'customer__phone']
+    ordering_fields = ['check_in_date', 'check_out_date', 'created_at']
+    ordering = ['-created_at']
+
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return BookingDetailSerializer
+        return BookingSerializer
+
+    def get_queryset(self):
+        queryset = Booking.objects.select_related('customer').prefetch_related('rooms').all()
+        
+        # Filter by user role
+        if self.request.user.role == 'customer':
+            queryset = queryset.filter(customer=self.request.user)
+        
+        # Filter by status
+        status_filter = self.request.query_params.get('status', None)
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        
+        return queryset
+
+    def create(self, request):
+        """Tạo booking mới"""
+        serializer = BookingSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            booking = serializer.save()
+            return Response(BookingDetailSerializer(booking).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def update(self, request, pk=None):
+        """Cập nhật booking"""
+        booking = get_object_or_404(Booking, pk=pk)
+        
+        serializer = BookingSerializer(booking, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            booking = serializer.save()
+            return Response(BookingDetailSerializer(booking).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def get_permissions(self):
+        if self.action in ['create']:
+            return [IsAuthenticated()]
+        elif self.action in ['update', 'partial_update']:
+            return [IsBookingOwner()]
+        elif self.action in ['confirm']:
+            return [CanConfirmBooking()]
+        elif self.action in ['cancel']:
+            return [CanCancelBooking()]
+        return [IsAuthenticated()]
+
+    @action(detail=True, methods=['post'])
+    def confirm(self, request, pk=None):
+        """Xác nhận booking (chỉ staff)"""
+        booking = get_object_or_404(Booking, pk=pk)
+        
+        if booking.status != BookingStatus.PENDING:
+            return Response({"error": "Booking không ở trạng thái chờ xác nhận"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        booking.status = BookingStatus.CONFIRMED
+        booking.save()
+        
+        # Tự động tạo QR code thông qua signals
+        
+        return Response(BookingDetailSerializer(booking).data)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        """Hủy booking"""
+        booking = get_object_or_404(Booking, pk=pk)
+        
+        if booking.status in [BookingStatus.CHECKED_IN, BookingStatus.CHECKED_OUT]:
+            return Response({"error": "Không thể hủy booking đã check-in hoặc check-out"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        booking.status = BookingStatus.CANCELLED
+        booking.save()
+        
+        # Giải phóng phòng
+        for room in booking.rooms.all():
+            room.status = 'available'
+            room.save()
+        
+        return Response(BookingDetailSerializer(booking).data)
+
+
+class RoomRentalViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
+    """
+    ViewSet quản lý RoomRental
+    """
+    queryset = RoomRental.objects.all()
+    serializer_class = RoomRentalSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ['customer__full_name', 'customer__phone']
+    ordering_fields = ['check_in_date', 'check_out_date', 'created_at']
+    ordering = ['-created_at']
+
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return RoomRentalDetailSerializer
+        return RoomRentalSerializer
+
+    def get_queryset(self):
+        queryset = RoomRental.objects.select_related('customer', 'booking').prefetch_related('rooms').all()
+        
+        # Filter by user role
+        if self.request.user.role == 'customer':
+            queryset = queryset.filter(customer=self.request.user)
+        
+        return queryset
+
+    def create(self, request):
+        """Tạo rental mới"""
+        serializer = RoomRentalSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            rental = serializer.save()
+            return Response(RoomRentalDetailSerializer(rental).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def update(self, request, pk=None):
+        """Cập nhật rental"""
+        rental = get_object_or_404(RoomRental, pk=pk)
+        
+        serializer = RoomRentalSerializer(rental, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            rental = serializer.save()
+            return Response(RoomRentalDetailSerializer(rental).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def get_permissions(self):
+        if self.action in ['create']:
+            return [IsAuthenticated()]
+        elif self.action in ['update', 'partial_update']:
+            return [IsRoomRentalOwner()]
+        elif self.action in ['checkout']:
+            return [CanCheckOut()]
+        return [IsAuthenticated()]
+
+    @action(detail=True, methods=['post'])
+    def checkout(self, request, pk=None):
+        """Check-out và tính toán giá cuối cùng"""
+        rental = get_object_or_404(RoomRental, pk=pk)
+        
+        try:
+            with transaction.atomic():
+                # Tính toán giá cuối cùng
+                rental.check_out_date = timezone.now()
+                rental.save()
+                
+                # Cập nhật booking status
+                if rental.booking:
+                    rental.booking.status = BookingStatus.CHECKED_OUT
+                    rental.booking.save()
+                
+                # Giải phóng phòng
+                for room in rental.rooms.all():
+                    room.status = 'available'
+                    room.save()
+                
+                return Response(RoomRentalDetailSerializer(rental).data)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PaymentViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
+    """
+    ViewSet quản lý Payment
+    """
+    queryset = Payment.objects.all()
+    serializer_class = PaymentSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ['transaction_id', 'rental__customer__full_name']
+    ordering_fields = ['paid_at', 'amount', 'created_at']
+    ordering = ['-created_at']
+
+    def get_permissions(self):
+        if self.action in ['create']:
+            return [CanManagePayments()]
+        elif self.action in ['process']:
+            return [CanManagePayments()]
+        return [IsAuthenticated()]
+
+    def create(self, request):
+        """Tạo payment mới"""
+        serializer = PaymentSerializer(data=request.data)
+        if serializer.is_valid():
+            payment = serializer.save()
+            return Response(PaymentSerializer(payment).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def process(self, request, pk=None):
+        """Xử lý thanh toán"""
+        payment = get_object_or_404(Payment, pk=pk)
+        
+        if payment.status:
+            return Response({"error": "Payment đã được thanh toán"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        payment.status = True
+        payment.save()
+        
+        return Response(PaymentSerializer(payment).data)
+
+
+class DiscountCodeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
+    """
+    ViewSet quản lý DiscountCode
+    """
+    queryset = DiscountCode.objects.all()
+    serializer_class = DiscountCodeSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ['code']
+    ordering_fields = ['valid_from', 'valid_to', 'discount_percentage']
+    ordering = ['-valid_from']
+
+    def get_queryset(self):
+        queryset = DiscountCode.objects.all()
+        
+        # Filter active codes
+        active_only = self.request.query_params.get('active_only', None)
+        if active_only:
+            queryset = queryset.filter(is_active=True)
+        
+        return queryset
+
+    def create(self, request):
+        """Tạo discount code mới (chỉ admin/owner)"""
+        serializer = DiscountCodeSerializer(data=request.data)
+        if serializer.is_valid():
+            discount = serializer.save()
+            return Response(DiscountCodeSerializer(discount).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [CanCreateDiscountCode()]
+        return [IsAuthenticated()]
+
+    @action(detail=False, methods=['post'])
+    def validate_code(self, request):
+        """Kiểm tra mã giảm giá có hợp lệ không"""
+        code = request.data.get('code')
+        if not code:
+            return Response({"error": "Cần cung cấp mã giảm giá"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            discount = DiscountCode.objects.get(code=code)
+            if discount.is_valid():
+                return Response({"valid": True, "discount": DiscountCodeSerializer(discount).data})
+            else:
+                return Response({"valid": False, "error": "Mã giảm giá không hợp lệ hoặc đã hết hạn"})
+        except DiscountCode.DoesNotExist:
+            return Response({"valid": False, "error": "Mã giảm giá không tồn tại"})
+
+
+class NotificationViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
+    """
+    ViewSet quản lý Notification
+    """
+    queryset = Notification.objects.all()
+    serializer_class = NotificationSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ['title', 'message']
+    ordering_fields = ['created_at', 'is_read']
+    ordering = ['-created_at']
+
+    def get_queryset(self):
+        return Notification.objects.filter(user=self.request.user)
+
+    def create(self, request):
+        """Tạo notification mới (chỉ admin/owner)"""
+        serializer = NotificationSerializer(data=request.data)
+        if serializer.is_valid():
+            notification = serializer.save()
+            return Response(NotificationSerializer(notification).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def get_permissions(self):
+        if self.action in ['create']:
+            return [CanCreateNotification()]
+        elif self.action in ['mark_as_read', 'mark_all_as_read']:
+            return [IsAuthenticated()]
+        return [IsAuthenticated()]
+
+    @action(detail=True, methods=['post'])
+    def mark_as_read(self, request, pk=None):
+        """Đánh dấu thông báo đã đọc"""
+        notification = get_object_or_404(Notification, pk=pk, user=request.user)
+        notification.is_read = True
+        notification.read_at = timezone.now()
+        notification.save()
+        
+        return Response(NotificationSerializer(notification).data)
+
+    @action(detail=False, methods=['post'])
+    def mark_all_as_read(self, request):
+        """Đánh dấu tất cả thông báo đã đọc"""
+        Notification.objects.filter(user=request.user, is_read=False).update(
+            is_read=True,
+            read_at=timezone.now()
+        )
+        
+        return Response({"message": "Đã đánh dấu tất cả thông báo đã đọc"})
+
+
+# ================================ QR CODE & CHECK-IN ================================
+
+class QRCodeScanView(APIView):
+    """
+    API để scan QR code và thực hiện check-in
+    """
+    permission_classes = [CanCheckIn]
+
+    def post(self, request):
+        """
+        Scan QR code và tạo RoomRental
+        
+        Workflow:
+        1. Scan QR code → lấy uuid
+        2. Tìm booking theo uuid
+        3. Validate booking (confirmed, chưa check-in)
+        4. Tạo RoomRental với thông tin thực tế
+        5. Cập nhật booking status
+        """
+        uuid_str = request.data.get('uuid')
+        actual_guest_count = request.data.get('actual_guest_count')
+        
+        if not uuid_str:
+            return Response({"error": "Cần cung cấp UUID từ QR code"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Tìm booking theo UUID
+            booking = Booking.objects.get(uuid=uuid_str)
+            
+            # Validate booking
+            if booking.status != BookingStatus.CONFIRMED:
+                return Response({"error": "Booking chưa được xác nhận hoặc đã check-in"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Validate thời gian check-in
+            now = timezone.now()
+            if now < booking.check_in_date:
+                return Response({"error": "Chưa đến thời gian check-in"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Tạo RoomRental
+            with transaction.atomic():
+                rental = RoomRental.objects.create(
+                    booking=booking,
+                    customer=booking.customer,
+                    check_out_date=booking.check_out_date,
+                    total_price=booking.total_price,
+                    guest_count=actual_guest_count or booking.guest_count,
+                )
+                
+                # Thêm rooms vào rental
+                rental.rooms.set(booking.rooms.all())
+                
+                # Cập nhật booking status
+                booking.status = BookingStatus.CHECKED_IN
+                booking.save()
+                
+                # Cập nhật room status
+                for room in booking.rooms.all():
+                    room.status = 'occupied'
+                    room.save()
+                
+                return Response({
+                    "message": "Check-in thành công",
+                    "rental": RoomRentalDetailSerializer(rental).data,
+                    "booking": BookingDetailSerializer(booking).data
+                })
+        
+        except Booking.DoesNotExist:
+            return Response({"error": "Không tìm thấy booking với UUID này"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class QRCodeGenerateView(APIView):
+    """
+    API để tạo QR code cho booking (chỉ admin/staff)
+    """
+    permission_classes = [CanGenerateQRCode]
+
+    def post(self, request):
+        """
+        Tạo QR code cho booking
+        """
+        booking_id = request.data.get('booking_id')
+        if not booking_id:
+            return Response({"error": "Cần cung cấp booking_id"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            booking = Booking.objects.get(id=booking_id)
+            
+            if booking.status != BookingStatus.CONFIRMED:
+                return Response({"error": "Booking chưa được xác nhận"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Generate QR code (sẽ được xử lý bởi method trong model)
+            qr_code_url = booking.generate_qr_code()
+            
+            return Response({
+                "message": "QR code đã được tạo",
+                "qr_code_url": qr_code_url,
+                "booking": BookingDetailSerializer(booking).data
+            })
+        
+        except Booking.DoesNotExist:
+            return Response({"error": "Không tìm thấy booking"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ================================ STATS & ANALYTICS ================================
+
+class StatsView(APIView):
+    """
+    API thống kê dành cho admin
+    """
+    permission_classes = [CanViewStats]
+
+    def get(self, request):
+        """
+        Lấy thống kê tổng quan
+        """
+        # Thống kê cơ bản
+        total_users = User.objects.count()
+        total_rooms = Room.objects.count()
+        total_bookings = Booking.objects.count()
+        total_rentals = RoomRental.objects.count()
+        
+        # Thống kê phòng theo trạng thái
+        room_stats = Room.objects.values('status').annotate(count=Count('id'))
+        
+        # Thống kê booking theo trạng thái
+        booking_stats = Booking.objects.values('status').annotate(count=Count('id'))
+        
+        # Thống kê doanh thu
+        total_revenue = Payment.objects.filter(status=True).aggregate(total=Sum('amount'))['total'] or 0
+        
+        # Thống kê theo tháng
+        from django.db.models import TruncMonth
+        monthly_revenue = Payment.objects.filter(status=True).annotate(
+            month=TruncMonth('paid_at')
+        ).values('month').annotate(revenue=Sum('amount')).order_by('month')
+        
+        return Response({
+            "overview": {
+                "total_users": total_users,
+                "total_rooms": total_rooms,
+                "total_bookings": total_bookings,
+                "total_rentals": total_rentals,
+                "total_revenue": str(total_revenue),
+            },
+            "room_stats": list(room_stats),
+            "booking_stats": list(booking_stats),
+            "monthly_revenue": list(monthly_revenue),
+        })
 
 
 # ======================================== VNPay ========================================

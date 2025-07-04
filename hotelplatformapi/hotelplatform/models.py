@@ -126,6 +126,7 @@ class Booking(models.Model):
     status = models.CharField(max_length=20, choices=BookingStatus.choices, default=BookingStatus.PENDING)
     special_requests = models.TextField(null=True, blank=True)  # Yêu cầu đặc biệt
     qr_code = CloudinaryField('qr_code', null=True, blank=True)  # Lưu mã QR
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, db_index=True)  # UUID cho QR code
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -164,6 +165,102 @@ class Booking(models.Model):
             room.status = 'booked'
             room.save()
 
+    def generate_qr_code(self):
+        """
+        Tạo QR code cho booking
+        """
+        import qrcode
+        import io
+        from cloudinary.uploader import upload
+        
+        # Tạo data cho QR code
+        qr_data = {
+            'uuid': str(self.uuid),
+            'booking_id': self.id,
+            'customer_name': self.customer.full_name,
+            'check_in_date': self.check_in_date.isoformat(),
+            'rooms': [room.room_number for room in self.rooms.all()]
+        }
+        
+        # Tạo QR code
+        qr = qrcode.QRCode(version=1, box_size=10, border=5)
+        qr.add_data(str(qr_data))
+        qr.make(fit=True)
+        
+        # Convert to image
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Save to BytesIO
+        buffer = io.BytesIO()
+        img.save(buffer, format='PNG')
+        buffer.seek(0)
+        
+        # Upload to Cloudinary
+        result = upload(buffer, folder="qr_codes", resource_type="image")
+        
+        # Save URL to model
+        self.qr_code = result['secure_url']
+        self.save()
+        
+        return result['secure_url']
+
+    def check_in(self, actual_guest_count=None):
+        """
+        Thực hiện check-in và tạo RoomRental
+        """
+        if self.status != BookingStatus.CONFIRMED:
+            raise ValidationError("Booking chưa được xác nhận")
+        
+        # Tạo RoomRental
+        rental = RoomRental.objects.create(
+            booking=self,
+            customer=self.customer,
+            check_out_date=self.check_out_date,
+            total_price=self.total_price,
+            guest_count=actual_guest_count or self.guest_count,
+        )
+        
+        # Thêm rooms
+        rental.rooms.set(self.rooms.all())
+        
+        # Cập nhật status
+        self.status = BookingStatus.CHECKED_IN
+        self.save()
+        
+        return rental
+
+    @classmethod
+    def get_by_uuid(cls, uuid_str):
+        """
+        Lấy booking theo UUID
+        """
+        try:
+            return cls.objects.get(uuid=uuid_str)
+        except cls.DoesNotExist:
+            return None
+
+    def calculate_actual_price(self, actual_guest_count=None):
+        """
+        Tính giá thực tế dựa trên số khách thực tế
+        """
+        if not actual_guest_count:
+            actual_guest_count = self.guest_count
+        
+        total_price = Decimal('0')
+        
+        for room in self.rooms.all():
+            base_price = room.room_type.base_price
+            
+            # Tính phụ thu nếu vượt quá số khách tối đa
+            if actual_guest_count > room.room_type.max_guests:
+                extra_guests = actual_guest_count - room.room_type.max_guests
+                surcharge = base_price * (room.room_type.extra_guest_surcharge / 100) * extra_guests
+                total_price += base_price + surcharge
+            else:
+                total_price += base_price
+        
+        return total_price
+
 # Phiếu thuê phòng
 class RoomRental(models.Model):
     booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='rentals', null=True, blank=True)
@@ -201,6 +298,69 @@ class RoomRental(models.Model):
         for room in self.rooms.all():
             room.status = 'occupied'
             room.save()
+
+    def check_out(self, actual_check_out_date=None):
+        """
+        Thực hiện check-out và tính toán giá cuối cùng
+        """
+        if not actual_check_out_date:
+            actual_check_out_date = timezone.now()
+        
+        self.check_out_date = actual_check_out_date
+        
+        # Tính toán lại giá dựa trên thời gian thực tế
+        self.total_price = self.calculate_final_price()
+        
+        # Cập nhật booking status
+        if self.booking:
+            self.booking.status = BookingStatus.CHECKED_OUT
+            self.booking.save()
+        
+        # Giải phóng phòng
+        for room in self.rooms.all():
+            room.status = 'available'
+            room.save()
+        
+        self.save()
+        
+        return self.total_price
+
+    def calculate_final_price(self):
+        """
+        Tính giá cuối cùng dựa trên thời gian thực tế và số khách
+        """
+        total_price = Decimal('0')
+        
+        # Tính số ngày thực tế
+        actual_days = (self.check_out_date - self.check_in_date).days
+        if actual_days < 1:
+            actual_days = 1  # Tối thiểu 1 ngày
+        
+        for room in self.rooms.all():
+            base_price = room.room_type.base_price
+            room_total = base_price * actual_days
+            
+            # Tính phụ thu nếu vượt quá số khách tối đa
+            if self.guest_count > room.room_type.max_guests:
+                extra_guests = self.guest_count - room.room_type.max_guests
+                surcharge = base_price * (room.room_type.extra_guest_surcharge / 100) * extra_guests * actual_days
+                room_total += surcharge
+            
+            total_price += room_total
+        
+        return total_price
+
+    def get_duration_days(self):
+        """
+        Lấy số ngày lưu trú thực tế
+        """
+        return (self.check_out_date - self.check_in_date).days
+
+    def is_overdue(self):
+        """
+        Kiểm tra xem có quá hạn checkout không
+        """
+        return timezone.now() > self.check_out_date
 
 # Thanh toán
 # Được tạo khi khách check-out,Trường amount lưu tổng số tiền thanh toán cuối cùng, 
