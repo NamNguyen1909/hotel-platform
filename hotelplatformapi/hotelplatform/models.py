@@ -70,7 +70,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     objects = UserManager()
 
     USERNAME_FIELD = 'username'
-    REQUIRED_FIELDS = ['email', 'full_name','id_card','phone','role']
+    REQUIRED_FIELDS = ['email', 'full_name']
 
     class Meta:
         indexes = [

@@ -35,6 +35,7 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
+    path('', include('hotelplatform.urls')),  # Include your app's URLs
     path('admin/', admin.site.urls),
 
 

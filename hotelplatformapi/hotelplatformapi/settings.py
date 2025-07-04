@@ -38,7 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'hotelplatform.app.HotelplatformConfig',
+    'hotelplatform.apps.HotelplatformConfig',
     'drf_yasg', # Swagger
     'rest_framework', # Django REST Framework
     'rest_framework.authtoken', # Token authentication
@@ -90,8 +90,8 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'hoteldb',
         'USER': 'root',
-        'PASSWORD': 'Admin@123',
-        # 'PASSWORD': 'ThanhNam*1909',
+        # 'PASSWORD': 'Admin@123',
+        'PASSWORD': 'ThanhNam*1909',
         'HOST': '' # mặc định localhost
     }
 
