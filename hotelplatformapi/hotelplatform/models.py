@@ -66,6 +66,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_superuser = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    customer_type = models.CharField(max_length=20, choices=CustomerType.choices, default=CustomerType.NEW)
+
+    total_bookings = models.PositiveIntegerField(default=0)
+
+    total_spent = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
 
     objects = UserManager()
 
@@ -76,10 +81,41 @@ class User(AbstractBaseUser, PermissionsMixin):
         indexes = [
             models.Index(fields=['role']),
             models.Index(fields=['created_at']),
+            models.Index(fields=['customer_type']),
         ]
 
     def __str__(self):
         return self.full_name or self.username
+
+    def update_customer_type(self):
+
+        """Cập nhật loại khách hàng dựa trên số lần đặt phòng và tổng chi tiêu"""
+
+        bookings_count = self.bookings.count()
+
+        total_spent = self.payments.filter(status=True).aggregate(total=Sum('final_amount'))['total'] or 0
+
+        self.total_bookings = bookings_count
+
+        self.total_spent = total_spent
+
+        if bookings_count >= 20 or total_spent >= 5000:
+
+            self.customer_type = CustomerType.SUPER_VIP
+
+        elif bookings_count >= 10 or total_spent >= 2000:
+
+            self.customer_type = CustomerType.VIP
+
+        elif bookings_count >= 3:
+
+            self.customer_type = CustomerType.REGULAR
+
+        else:
+
+            self.customer_type = CustomerType.NEW
+
+        self.save()
 
 # Loại phòng
 class RoomType(models.Model):
@@ -143,6 +179,7 @@ class Booking(models.Model):
         ]
         indexes = [
             models.Index(fields=['customer', 'check_in_date']),
+            models.Index(fields=['uuid']),
         ]
 
     def __str__(self):
@@ -157,6 +194,10 @@ class Booking(models.Model):
             if room.status != 'available':
                 raise ValidationError(f"Phòng {room.room_number} không khả dụng.")
 
+            if self.guest_count > room.room_type.max_guests:
+
+                raise ValidationError(f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách.")
+
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
@@ -164,6 +205,8 @@ class Booking(models.Model):
         for room in self.rooms.all():
             room.status = 'booked'
             room.save()
+
+        self.customer.update_customer_type()
 
     def generate_qr_code(self):
         """
@@ -288,8 +331,10 @@ class RoomRental(models.Model):
     def clean(self):
         if self.check_in_date >= self.check_out_date:
             raise ValidationError("Ngày nhận phòng phải trước ngày trả phòng.")
-        if self.guest_count > 3:
-            raise ValidationError("Mỗi phòng tối đa 3 khách.")
+        for room in self.rooms.all():
+            if self.guest_count > room.room_type.max_guests:
+
+                raise ValidationError(f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách.")
 
     def save(self, *args, **kwargs):
         self.full_clean()
@@ -298,6 +343,9 @@ class RoomRental(models.Model):
         for room in self.rooms.all():
             room.status = 'occupied'
             room.save()
+        if self.customer:
+
+            self.customer.update_customer_type()
 
     def check_out(self, actual_check_out_date=None):
         """
