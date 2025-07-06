@@ -295,44 +295,72 @@ def role_based_redirect(user):
         return redirect('/customer/app/')
 ```
 
-## Workflow tạo User
+## Workflow tạo User và phân quyền
 
-### 1. Admin tạo Owner
+### 1. Admin tạo Owner (Qua Django Admin)
 ```python
-# Chỉ thông qua Django Admin
+# Chỉ Admin có thể tạo Owner qua Django Admin (/admin/)
+# Truy cập Admin Panel → Users → Add User
 owner = User.objects.create_user(
     username='owner_hotel_abc',
     email='owner@hotel.com',
-    password='password',
-    role='owner',
-    full_name='Nguyễn Văn Owner'
+    password='secure_password',
+    role='owner',  # Quan trọng: set role=owner
+    full_name='Nguyễn Văn Owner',
+    phone='0123456789'
 )
 ```
 
-### 2. Owner tạo Staff
+### 2. Owner tạo Staff (Qua API)
 ```python
 # API: POST /api/users/create-staff/
+# Owner login vào dashboard và sử dụng staff management
 {
     "username": "staff_reception",
     "email": "staff@hotel.com",
-    "password": "password",
+    "password": "staff_password",
     "full_name": "Nguyễn Văn Staff",
     "phone": "0123456789"
 }
-# Auto set role='staff'
+# System tự động set role='staff' và liên kết với Owner
 ```
 
-### 3. Customer tự đăng ký
+### 3. Customer tự đăng ký (Qua Customer App)
 ```python
-# API: POST /api/users/
+# API: POST /api/users/register/
+# Customer tự đăng ký qua mobile app hoặc website
 {
     "username": "customer123",
     "email": "customer@email.com", 
-    "password": "password",
+    "password": "customer_password",
     "full_name": "Nguyễn Văn Customer",
     "phone": "0987654321"
 }
-# Auto set role='customer'
+# System tự động set role='customer'
+```
+
+### 4. Access Control Flow
+```python
+# Middleware kiểm tra role khi truy cập
+@login_required
+def check_user_access(request):
+    user = request.user
+    
+    if user.role == 'admin':
+        # Cho phép truy cập Django Admin
+        return redirect('/admin/')
+    elif user.role == 'owner':
+        # Redirect đến Owner Dashboard
+        return redirect('/owner/dashboard/')
+    elif user.role == 'staff':
+        # Redirect đến Staff Interface
+        return redirect('/staff/dashboard/')
+    elif user.role == 'customer':
+        # Redirect đến Customer App
+        return redirect('/customer/app/')
+    else:
+        # Unauthorized
+        return redirect('/login/')
 ```
 
 ## Signals & Automation

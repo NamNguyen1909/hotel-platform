@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
+from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -41,11 +42,15 @@ INSTALLED_APPS = [
     'hotelplatform.apps.HotelplatformConfig',
     'drf_yasg', # Swagger
     'rest_framework', # Django REST Framework
-    'rest_framework.authtoken', # Token authentication
-    'oauth2_provider', # OAuth2 support
+    'rest_framework_simplejwt',  # JWT authentication
+    'rest_framework_simplejwt.token_blacklist',  # JWT blacklist
+    'oauth2_provider', # Django OAuth Toolkit
+    'corsheaders', # CORS headers
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',  # CORS middleware
+    'oauth2_provider.middleware.OAuth2TokenMiddleware',  # OAuth2 middleware
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -168,6 +173,69 @@ REST_FRAMEWORK = {
     ],
     
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'oauth2_provider.contrib.rest_framework.OAuth2Authentication',
-    ]
+        'rest_framework_simplejwt.authentication.JWTAuthentication', # JWT cho mobile/web app
+        'oauth2_provider.contrib.rest_framework.OAuth2Authentication', # OAuth2 cho third-party
+        'rest_framework.authentication.SessionAuthentication', # Session cho web browser
+    ],
+    
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated', # Mặc định yêu cầu xác thực
+    ],
+    
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',
+    ],
 }
+
+# JWT Settings
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': False,
+
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'VERIFYING_KEY': None,
+    'AUDIENCE': None,
+    'ISSUER': None,
+
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
+
+    'JTI_CLAIM': 'jti',
+
+    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
+    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=60),
+    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=7),
+}
+
+# OAuth2 Settings
+OAUTH2_PROVIDER = {
+    'SCOPES': {
+        'read': 'Read scope',
+        'write': 'Write scope',
+    },
+    'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,  # 1 hour
+    'REFRESH_TOKEN_EXPIRE_SECONDS': 3600 * 24 * 7,  # 7 days
+    'AUTHORIZATION_CODE_EXPIRE_SECONDS': 600,  # 10 minutes
+    'ROTATE_REFRESH_TOKEN': True,
+    
+    # Standard OAuth2 Configuration
+    'OAUTH2_VALIDATOR_CLASS': 'oauth2_provider.oauth2_validators.OAuth2Validator',
+    'OAUTH2_BACKEND_CLASS': 'oauth2_provider.oauth2_backends.JSONOAuthLibCore',
+}
+
+CORS_ALLOW_ALL_ORIGINS = True # Cho phép tất cả các nguồn gốc
+
+CORS_ALLOWED_ORIGINS = []
+
+CLIENT_ID='tOuFnDVIoke9IN9P6RXqEKvJClmv3pimYCx7bydp'
+CLIENT_SECRECT='pbkdf2_sha256$1000000$PoEdypkZKFrsEjNKXt7yvY$SPFPq7WB1bsySc1ODPo9L5ohkmDvpaANuMJtEtbwMdg='

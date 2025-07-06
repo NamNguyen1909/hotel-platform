@@ -1,3 +1,4 @@
+from datetime import timedelta
 from rest_framework import serializers
 from rest_framework.serializers import ModelSerializer
 from .models import (
@@ -66,7 +67,7 @@ class DiscountCodeSerializer(ModelSerializer):
         ]
         read_only_fields = ['used_count']
     
-     def validate(self, attrs):
+    def validate(self, attrs):
         valid_from = attrs.get('valid_from')
         valid_to = attrs.get('valid_to')
         if valid_from and valid_to and valid_from > valid_to:
@@ -323,7 +324,7 @@ class BookingDetailSerializer(ModelSerializer):
             data['qr_code'] = None
         return data
 
-     def validate(self, attrs):
+    def validate(self, attrs):
         check_in_date = attrs.get('check_in_date')
         check_out_date = attrs.get('check_out_date')
         rooms = attrs.get('rooms', [])
