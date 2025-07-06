@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import hmac
 from django.shortcuts import redirect, render
@@ -15,49 +15,19 @@ from rest_framework.views import APIView
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 
+
+
 # Django imports
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import Q, Sum, Count, Avg
+from django.db.models import Q, Sum, Count, Avg, F
+from django.db.models.functions import TruncMonth
 from django.shortcuts import get_object_or_404
 
 # Local imports
 from .models import (
     User, RoomType, Room, Booking, RoomRental, Payment, DiscountCode, Notification,
-    BookingStatus
-)
-from .serializers import (
-    UserSerializer, UserDetailSerializer, RoomTypeSerializer, RoomSerializer, RoomDetailSerializer,
-    BookingSerializer, BookingDetailSerializer, RoomRentalSerializer, RoomRentalDetailSerializer,
-    PaymentSerializer, DiscountCodeSerializer, NotificationSerializer
-)
-
-from datetime import datetime
-import hashlib
-import hmac
-from django.shortcuts import redirect, render
-from django.http import HttpResponse, JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-import urllib
-
-# REST Framework imports
-from rest_framework import viewsets, status, generics
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.views import APIView
-from rest_framework.filters import SearchFilter, OrderingFilter
-
-# Django imports
-from django.utils import timezone
-from django.db import transaction
-from django.db.models import Q, Sum, Count, Avg
-from django.shortcuts import get_object_or_404
-
-# Local imports
-from .models import (
-    User, RoomType, Room, Booking, RoomRental, Payment, DiscountCode, Notification,
-    BookingStatus
+    BookingStatus, CustomerType
 )
 from .serializers import (
     UserSerializer, UserDetailSerializer, RoomTypeSerializer, RoomSerializer, RoomDetailSerializer,
@@ -97,9 +67,9 @@ class UserViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
         return UserSerializer
 
     def get_permissions(self):
-        if self.action in ['create']:
+        if self.action == 'create':
             return [AllowAny()]
-        elif self.action in ['list']:
+        elif self.action in ['list', 'vip_customers']:
             return [CanManageUsers()]
         elif self.action in ['create_staff', 'staff_list']:
             return [IsOwnerUser()]
@@ -108,28 +78,43 @@ class UserViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
         return [IsAuthenticated()]
 
     def create(self, request):
-        """Tạo user mới"""
-        serializer = UserSerializer(data=request.data)
+        """
+        Tạo user mới.
+        Nếu chưa đăng nhập, chỉ cho phép tạo tài khoản customer.
+        """
+        data = request.data.copy()
+        if not request.user.is_authenticated:
+            data['role'] = 'customer'
+
+        serializer = UserSerializer(data=data)
         if serializer.is_valid():
             user = serializer.save()
             return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def update(self, request, pk=None):
-        """Cập nhật user"""
+        """
+        Cập nhật user
+        """
         user = get_object_or_404(User, pk=pk)
+        self.check_object_permissions(request, user)
+
         serializer = UserSerializer(user, data=request.data, partial=True)
         if serializer.is_valid():
             user = serializer.save()
             return Response(UserDetailSerializer(user).data)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['post'])
     def create_staff(self, request):
-        """Owner tạo staff account"""
+        """
+        Owner tạo staff account
+        """
         data = request.data.copy()
-        data['role'] = 'staff'  # Auto set role staff
-        
+        data['role'] = 'staff'
+
         serializer = UserSerializer(data=data)
         if serializer.is_valid():
             staff = serializer.save()
@@ -137,29 +122,53 @@ class UserViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
                 'message': 'Staff account created successfully',
                 'staff': UserSerializer(staff).data
             }, status=status.HTTP_201_CREATED)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['get'])
     def staff_list(self, request):
-        """Owner xem danh sách staff"""
+        """
+        Owner xem danh sách staff
+        """
         staff_users = User.objects.filter(role='staff')
         serializer = UserSerializer(staff_users, many=True)
         return Response(serializer.data)
 
     @action(detail=False, methods=['get'])
     def profile(self, request):
-        """Lấy thông tin profile của user hiện tại"""
+        """
+        Lấy thông tin profile của user hiện tại
+        """
         serializer = UserDetailSerializer(request.user)
         return Response(serializer.data)
 
     @action(detail=False, methods=['put'])
     def update_profile(self, request):
-        """Cập nhật profile của user hiện tại"""
+        """
+        Cập nhật profile của user hiện tại
+        """
         serializer = UserSerializer(request.user, data=request.data, partial=True)
         if serializer.is_valid():
             user = serializer.save()
             return Response(UserDetailSerializer(user).data)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['get'])
+    def vip_customers(self, request):
+        """
+        Phân tích khách hàng VIP
+        """
+        vip_customers = User.objects.filter(
+            role='customer',
+            customer_type__in=[CustomerType.VIP, CustomerType.SUPER_VIP]
+        ).order_by('-total_spent', '-total_bookings')[:10]
+
+        serializer = UserDetailSerializer(vip_customers, many=True)
+        return Response({
+            'message': 'Top VIP customers',
+            'customers': serializer.data
+        })
 
 
 class RoomTypeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
@@ -174,21 +183,28 @@ class RoomTypeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveA
     ordering_fields = ['base_price', 'max_guests', 'created_at']
     ordering = ['base_price']
 
-    def create(self, request):
-        """Tạo room type mới (chỉ admin/owner)"""
-        serializer = RoomTypeSerializer(data=request.data)
-        if serializer.is_valid():
-            room_type = serializer.save()
-            return Response(RoomTypeSerializer(room_type).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [CanModifyRoomType()]
         return [IsAuthenticated()]
 
+    def create(self, request):
+        """
+        Tạo room type mới (chỉ admin/owner)
+        """
+        serializer = RoomTypeSerializer(data=request.data)
+        if serializer.is_valid():
+            room_type = serializer.save()
+            return Response(
+                RoomTypeSerializer(room_type).data,
+                status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
     def update(self, request, pk=None):
-        """Cập nhật room type"""
+        """
+        Cập nhật room type
+        """
         room_type = get_object_or_404(RoomType, pk=pk)
         serializer = RoomTypeSerializer(room_type, data=request.data, partial=True)
         if serializer.is_valid():
@@ -204,48 +220,54 @@ class RoomViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
     queryset = Room.objects.all()
     serializer_class = RoomSerializer
     permission_classes = [IsAuthenticated]
-    filter_backends = [SearchFilter, OrderingFilter]
+    filter_backends = [SearchFilter, OrderingFilter, DjangoFilterBackend]
     search_fields = ['room_number', 'room_type__name']
     ordering_fields = ['room_number', 'status', 'created_at']
     ordering = ['room_number']
+    filterset_fields = ['status', 'room_type']
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
             return RoomDetailSerializer
         return RoomSerializer
 
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update']:
+            return [CanManageRooms()]
+        elif self.action == 'low_performance':
+            return [CanViewStats()]
+        return [IsAuthenticated()]
+
     def get_queryset(self):
         queryset = Room.objects.select_related('room_type').all()
-        
-        # Filter by status
-        status_filter = self.request.query_params.get('status', None)
+
+        status_filter = self.request.query_params.get('status')
         if status_filter:
             queryset = queryset.filter(status=status_filter)
-        
-        # Filter by room type
-        room_type = self.request.query_params.get('room_type', None)
+
+        room_type = self.request.query_params.get('room_type')
         if room_type:
             queryset = queryset.filter(room_type__id=room_type)
-        
+
         return queryset
 
     def create(self, request):
-        """Tạo room mới (chỉ admin/owner)"""
+        """
+        Tạo room mới (chỉ admin/owner)
+        """
         serializer = RoomSerializer(data=request.data)
         if serializer.is_valid():
             room = serializer.save()
-            return Response(RoomSerializer(room).data, status=status.HTTP_201_CREATED)
+            return Response(
+                RoomSerializer(room).data,
+                status=status.HTTP_201_CREATED
+            )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    def get_permissions(self):
-        if self.action in ['create']:
-            return [CanModifyRoomType()]
-        elif self.action in ['update', 'partial_update']:
-            return [CanManageRooms()]
-        return [IsAuthenticated()]
-
     def update(self, request, pk=None):
-        """Cập nhật room"""
+        """
+        Cập nhật room
+        """
         room = get_object_or_404(Room, pk=pk)
         serializer = RoomSerializer(room, data=request.data, partial=True)
         if serializer.is_valid():
@@ -255,18 +277,87 @@ class RoomViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
 
     @action(detail=False, methods=['get'])
     def available(self, request):
-        """Lấy danh sách phòng còn trống"""
+        """
+        Lấy danh sách phòng còn trống
+        """
         check_in = request.query_params.get('check_in')
         check_out = request.query_params.get('check_out')
-        
+        room_type = request.query_params.get('room_type')
+        guest_count = request.query_params.get('guest_count')
+
         if not check_in or not check_out:
-            return Response({"error": "Cần cung cấp check_in và check_out"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Logic tìm phòng trống
-        available_rooms = Room.objects.filter(status='available')
-        
+            return Response(
+                {"error": "Cần cung cấp check_in và check_out"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            check_in_date = datetime.strptime(check_in, '%Y-%m-%d')
+            check_out_date = datetime.strptime(check_out, '%Y-%m-%d')
+            if check_in_date >= check_out_date:
+                return Response(
+                    {"error": "Ngày nhận phòng phải trước ngày trả phòng"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except ValueError:
+            return Response(
+                {"error": "Định dạng ngày không hợp lệ, sử dụng YYYY-MM-DD"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        booked_rooms = Booking.objects.filter(
+            status__in=['pending', 'confirmed', 'checked_in'],
+            check_in_date__lt=check_out_date,
+            check_out_date__gt=check_in_date
+        ).values_list('rooms__id', flat=True)
+
+        available_rooms = Room.objects.filter(status='available').exclude(id__in=booked_rooms)
+
+        if room_type:
+            available_rooms = available_rooms.filter(room_type__id=room_type)
+
+        if guest_count:
+            try:
+                guest_count = int(guest_count)
+                available_rooms = available_rooms.filter(room_type__max_guests__gte=guest_count)
+            except ValueError:
+                return Response(
+                    {"error": "Số lượng khách phải là số nguyên"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
         serializer = RoomSerializer(available_rooms, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def low_performance(self, request):
+        """
+        Phân tích phòng ít được thuê
+        """
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+
+        try:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d') if start_date else timezone.now() - timedelta(days=365)
+            end_date = datetime.strptime(end_date, '%Y-%m-%d') if end_date else timezone.now()
+        except ValueError:
+            return Response(
+                {"error": "Định dạng ngày không hợp lệ, sử dụng YYYY-MM-DD"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        room_usage = Room.objects.annotate(
+            booking_count=Count('bookings', filter=Q(
+                bookings__check_in_date__gte=start_date,
+                bookings__check_out_date__lte=end_date
+            ))
+        ).order_by('booking_count')[:10]
+
+        serializer = RoomDetailSerializer(room_usage, many=True)
+        return Response({
+            'message': 'Phòng có hiệu suất thấp',
+            'rooms': serializer.data
+        })
 
 
 class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
