@@ -1,19 +1,4 @@
-"""
-URL configuration for hotelplatformapi project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/5.2/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
-"""
+# hotelplatformapi/urls.py
 from django.contrib import admin
 from django.urls import include, path, re_path
 from rest_framework import permissions
@@ -24,7 +9,8 @@ from drf_yasg import openapi
 
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
-    TokenRefreshView
+    TokenRefreshView,
+    TokenBlacklistView,
 )
 
 # schema view for Swagger documentation
@@ -33,26 +19,30 @@ schema_view = get_schema_view(
         title="Hotel Platform API",
         default_version='v1',
         description="APIs for Hotel Platform",
-        contact=openapi. Contact(email="namnguyen19092004@gmail.com"),
-        License=openapi. License (name="Nam Nguyen @2025"),
+        contact=openapi.Contact(email="namnguyen19092004@gmail.com"),
+        license=openapi.License(name="Nam Nguyen @2025"),
     ),
     public=True,
     permission_classes=(permissions.AllowAny,),
-
 )
 
 urlpatterns = [
-    path('', include('hotelplatform.urls')),  # Include your app's URLs
+    # Admin URLs
     path('admin/', admin.site.urls),
     path('hotel-admin/', admin_site.urls),  # Custom admin site
-
+    
+    # App URLs - chỉ include 1 lần
+    path('', include('hotelplatform.urls')),  # Root URLs
+    path('api/', include('hotelplatform.urls')),  # API URLs với prefix
+    
     # JWT authentication endpoints
-    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'), 
-    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'), 
+    path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/auth/token/blacklist/', TokenBlacklistView.as_view(), name='token_blacklist'),
     
     # OAuth2 endpoints
-    path('o/', include('oauth2_provider.urls',namespace='oauth2_provider')), 
-
+    path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')), 
+    
     # Swagger documentation
     re_path(r'^swagger(?P<format>\.json|\.yaml)$', schema_view.without_ui(cache_timeout=0), name='schema-json'), 
     re_path(r'^swagger/$', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),

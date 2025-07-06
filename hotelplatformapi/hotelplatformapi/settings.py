@@ -165,30 +165,32 @@ DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 
 STATICFILES_STORAGE = 'cloudinary_storage.storage.StaticCloudinaryStorage'
 
-REST_FRAMEWORK = {
-    'DEFAULT_PARSER_CLASSES': [
-        'rest_framework.parsers.JSONParser',
-        'rest_framework.parsers.MultiPartParser',
-        'rest_framework.parsers.FormParser',
-    ],
+# OAuth2 Settings (sử dụng token bình thường)
+OAUTH2_PROVIDER = {
+    'SCOPES': {
+        'read': 'Read scope',
+        'write': 'Write scope',
+    },
+    'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,  # 1 hour
+    'REFRESH_TOKEN_EXPIRE_SECONDS': 3600 * 24 * 7,  # 7 days
+    'AUTHORIZATION_CODE_EXPIRE_SECONDS': 600,  # 10 minutes
+    'ROTATE_REFRESH_TOKEN': True,
     
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication', # JWT cho mobile/web app
-        'oauth2_provider.contrib.rest_framework.OAuth2Authentication', # OAuth2 cho third-party
-        'rest_framework.authentication.SessionAuthentication', # Session cho web browser
-    ],
-    
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated', # Mặc định yêu cầu xác thực
-    ],
-    
-    'DEFAULT_RENDERER_CLASSES': [
-        'rest_framework.renderers.JSONRenderer',
-        'rest_framework.renderers.BrowsableAPIRenderer',
-    ],
+    # Thêm dòng này để hỗ trợ password grant type
+    'APPLICATION_MODEL': 'oauth2_provider.Application',
+    'GRANT_TYPES': {
+        'authorization-code': 'oauth2_provider.grant_types.AuthorizationCodeGrantType',
+        'password': 'oauth2_provider.grant_types.ResourceOwnerPasswordCredentialsGrantType',
+        'client-credentials': 'oauth2_provider.grant_types.ClientCredentialsGrantType',
+        'refresh-token': 'oauth2_provider.grant_types.RefreshTokenGrantType',
+    },
+
+    'RESOURCE_SERVER_INTROSPECTION_URL': None,
+    'RESOURCE_SERVER_AUTH_TOKEN': None,
+    'RESOURCE_SERVER_INTROSPECTION_CREDENTIALS': None,
 }
 
-# JWT Settings
+# JWT Settings cho Simple JWT (mobile app, direct API access)
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
@@ -217,25 +219,67 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=7),
 }
 
-# OAuth2 Settings
-OAUTH2_PROVIDER = {
-    'SCOPES': {
-        'read': 'Read scope',
-        'write': 'Write scope',
-    },
-    'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,  # 1 hour
-    'REFRESH_TOKEN_EXPIRE_SECONDS': 3600 * 24 * 7,  # 7 days
-    'AUTHORIZATION_CODE_EXPIRE_SECONDS': 600,  # 10 minutes
-    'ROTATE_REFRESH_TOKEN': True,
+# REST Framework với dual authentication
+REST_FRAMEWORK = {
+    'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',
+        'rest_framework.parsers.MultiPartParser',
+        'rest_framework.parsers.FormParser',
+    ],
     
-    # Standard OAuth2 Configuration
-    'OAUTH2_VALIDATOR_CLASS': 'oauth2_provider.oauth2_validators.OAuth2Validator',
-    'OAUTH2_BACKEND_CLASS': 'oauth2_provider.oauth2_backends.JSONOAuthLibCore',
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',    # JWT
+        'oauth2_provider.contrib.rest_framework.OAuth2Authentication',  # OAuth2
+        'rest_framework.authentication.SessionAuthentication',          # Session
+    ],
+    
+    # 'DEFAULT_PERMISSION_CLASSES': [
+    #     'rest_framework.permissions.IsAuthenticated',
+    # ],
+    
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',
+    ],
 }
 
 CORS_ALLOW_ALL_ORIGINS = True # Cho phép tất cả các nguồn gốc
 
 CORS_ALLOWED_ORIGINS = []
 
-CLIENT_ID='tOuFnDVIoke9IN9P6RXqEKvJClmv3pimYCx7bydp'
-CLIENT_SECRECT='pbkdf2_sha256$1000000$PoEdypkZKFrsEjNKXt7yvY$SPFPq7WB1bsySc1ODPo9L5ohkmDvpaANuMJtEtbwMdg='
+CLIENT_ID='kycIFibcgbEopjJ9esSVPU5PTECw6z4jAqMZ5j9w'
+CLIENT_SECRECT='TI8kzKgylZvAmqmSoi0SpgYt4z0pBS3SzNEEEPey0tVpYXRBQJgfrsYQzakk433ONKTc8WF9q3FnZR0XtDI1aOkj5bsIJcL9hZvpHaxJH9vXOUklrGXaiPivlJPOYuN4'
+
+
+# Cho Mobile App / Direct API: Sử dụng Simple JWT
+# POST /api/auth/token/
+# {
+#     "username": "user@example.com",
+#     "password": "password"
+# }
+
+# Cho Third-party Applications: Sử dụng OAuth2 flow
+# POST /o/token/
+# {
+#     "grant_type": "authorization_code",
+#     "code": "authorization_code",
+#     "client_id": "your_client_id",
+#     "client_secret": "your_client_secret"
+# }
+
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'oauth2_provider': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+        },
+    },
+}
