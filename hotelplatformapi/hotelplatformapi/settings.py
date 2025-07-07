@@ -245,7 +245,11 @@ REST_FRAMEWORK = {
 
 CORS_ALLOW_ALL_ORIGINS = True # Cho phép tất cả các nguồn gốc
 
-CORS_ALLOWED_ORIGINS = []
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:3000',  # React dev server
+    'http://localhost:5173',  # Vite dev server
+
+]
 
 CLIENT_ID='kycIFibcgbEopjJ9esSVPU5PTECw6z4jAqMZ5j9w'
 CLIENT_SECRECT='TI8kzKgylZvAmqmSoi0SpgYt4z0pBS3SzNEEEPey0tVpYXRBQJgfrsYQzakk433ONKTc8WF9q3FnZR0XtDI1aOkj5bsIJcL9hZvpHaxJH9vXOUklrGXaiPivlJPOYuN4'
