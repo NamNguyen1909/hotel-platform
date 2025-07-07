@@ -368,7 +368,7 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
     serializer_class = BookingSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [SearchFilter, OrderingFilter]
-    search_fields = ['customer__full_name', 'customer__phone']
+    search_fields = ['customer__full_name', 'customer__phone', 'id']
     ordering_fields = ['check_in_date', 'check_out_date', 'created_at']
     ordering = ['-created_at']
 
@@ -396,12 +396,14 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         serializer = BookingSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             booking = serializer.save()
+            booking.generate_qr_code()
             return Response(BookingDetailSerializer(booking).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def update(self, request, pk=None):
         """Cập nhật booking"""
         booking = get_object_or_404(Booking, pk=pk)
+        self.check_object_permissions(request, booking)
         
         serializer = BookingSerializer(booking, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
@@ -411,10 +413,10 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
 
     def get_permissions(self):
         if self.action in ['create']:
-            return [IsAuthenticated()]
+            return [CanManageBookings() | IsCustomerUser()]
         elif self.action in ['update', 'partial_update']:
-            return [IsBookingOwner()]
-        elif self.action in ['confirm']:
+            return [IsBookingOwner() | CanManageBookings()]
+        elif self.action in ['confirm', 'check_in']:
             return [CanConfirmBooking()]
         elif self.action in ['cancel']:
             return [CanCancelBooking()]
