@@ -4,49 +4,38 @@ import {
   Grid,
   Card,
   CardContent,
-  CardMedia,
   Typography,
   CircularProgress,
   Box,
   Button,
   Alert,
 } from '@mui/material';
-import { useNavigate, useLocation } from 'react-router-dom';
-import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+import api from '../services/apis';
 
-const Home = () => {
-  const [rooms, setRooms] = useState([]);
+const MyBookings = () => {
+  const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
-  const location = useLocation();
 
-  // Lấy search query từ URL
-  const searchParams = new URLSearchParams(location.search);
-  const searchQuery = searchParams.get('search') || '';
-
-  // Gọi API để lấy danh sách phòng
   useEffect(() => {
-    const fetchRooms = async () => {
+    const fetchBookings = async () => {
       try {
         setLoading(true);
-        const response = await axios.get(`/api/rooms/${searchQuery ? `?search=${encodeURIComponent(searchQuery)}` : ''}`, {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
-          },
-        });
-        setRooms(response.data);
+        const response = await api.get('/bookings/');
+        setBookings(response.data);
         setError(null);
       } catch (err) {
-        console.error('Error fetching rooms:', err);
-        setError('Không thể tải danh sách phòng. Vui lòng thử lại sau.');
-        setRooms([]);
+        console.error('Error fetching bookings:', err);
+        setError('Không thể tải danh sách đặt phòng. Vui lòng thử lại sau.');
+        setBookings([]);
       } finally {
         setLoading(false);
       }
     };
-    fetchRooms();
-  }, [searchQuery]);
+    fetchBookings();
+  }, []);
 
   return (
     <Box sx={{ flexGrow: 1, bgcolor: 'background.default', minHeight: '100vh' }}>
@@ -56,7 +45,7 @@ const Home = () => {
           gutterBottom
           sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 700 }}
         >
-          {searchQuery ? `Kết quả tìm kiếm: "${searchQuery}"` : 'Danh Sách Phòng'}
+          Đặt Phòng Của Tôi
         </Typography>
 
         {loading ? (
@@ -67,14 +56,14 @@ const Home = () => {
           <Alert severity="error" sx={{ mt: 2 }}>
             {error}
           </Alert>
-        ) : !Array.isArray(rooms) || rooms.length === 0 ? (
+        ) : !Array.isArray(bookings) || bookings.length === 0 ? (
           <Alert severity="info" sx={{ mt: 2 }}>
-            Không có phòng nào khả dụng.
+            Bạn chưa có đặt phòng nào.
           </Alert>
         ) : (
           <Grid container spacing={3}>
-            {rooms.map((room) => (
-              <Grid item xs={12} sm={6} md={4} key={room.id}>
+            {bookings.map((booking) => (
+              <Grid item xs={12} sm={6} md={4} key={booking.id}>
                 <Card
                   sx={{
                     borderRadius: 2,
@@ -86,12 +75,6 @@ const Home = () => {
                     },
                   }}
                 >
-                  <CardMedia
-                    component="img"
-                    height="140"
-                    image={room.room_type?.image || 'https://via.placeholder.com/300x140'}
-                    alt={`Phòng ${room.room_number}`}
-                  />
                   <CardContent>
                     <Typography
                       gutterBottom
@@ -99,13 +82,23 @@ const Home = () => {
                       component="div"
                       sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 600 }}
                     >
-                      Phòng {room.room_number} ({room.room_type_name || 'N/A'})
+                      Đặt phòng #{booking.id}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'Inter' }}>
-                      Giá: {parseFloat(room.room_type_price).toLocaleString('vi-VN')} VND/đêm
+                      Từ: {new Date(booking.check_in_date).toLocaleDateString('vi-VN')}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'Inter' }}>
-                      Trạng thái: {room.status === 'available' ? 'Còn trống' : room.status === 'booked' ? 'Đã đặt' : 'Đang sử dụng'}
+                      Đến: {new Date(booking.check_out_date).toLocaleDateString('vi-VN')}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'Inter' }}>
+                      Trạng thái: {booking.status === 'pending' ? 'Chờ xác nhận' :
+                        booking.status === 'confirmed' ? 'Đã xác nhận' :
+                        booking.status === 'checked_in' ? 'Đã nhận phòng' :
+                        booking.status === 'checked_out' ? 'Đã trả phòng' :
+                        booking.status === 'cancelled' ? 'Đã hủy' : 'Không xác định'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'Inter' }}>
+                      Tổng tiền: {parseFloat(booking.total_price).toLocaleString('vi-VN')} VND
                     </Typography>
                     <Button
                       variant="contained"
@@ -115,7 +108,7 @@ const Home = () => {
                         '&:hover': { bgcolor: '#B8860B' },
                         fontFamily: 'Inter',
                       }}
-                      onClick={() => navigate(`/room/${room.id}`)}
+                      onClick={() => navigate(`/booking/${booking.id}`)}
                     >
                       Xem Chi Tiết
                     </Button>
@@ -130,4 +123,4 @@ const Home = () => {
   );
 };
 
-export default Home;
+export default MyBookings;

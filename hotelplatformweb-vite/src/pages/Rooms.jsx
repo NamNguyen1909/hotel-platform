@@ -22,7 +22,7 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { Search as SearchIcon } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import axios from 'axios';
+import api from '../services/apis';
 import vi from 'date-fns/locale/vi';
 import { format } from 'date-fns';
 
@@ -55,11 +55,7 @@ const Rooms = () => {
   useEffect(() => {
     const fetchRoomTypes = async () => {
       try {
-        const response = await axios.get('/api/room-types/', {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
-          },
-        });
+        const response = await api.get('/room-types/');
         setRoomTypes(response.data);
       } catch (err) {
         console.error('Error fetching room types:', err);
@@ -73,7 +69,7 @@ const Rooms = () => {
     const fetchRooms = async () => {
       try {
         setLoading(true);
-        let url = '/api/rooms/';
+        let url = '/rooms/';
         const params = new URLSearchParams();
 
         if (searchQuery) params.append('search', searchQuery);
@@ -81,22 +77,27 @@ const Rooms = () => {
         if (checkInDate && checkOutDate) {
           params.append('check_in', format(checkInDate, 'yyyy-MM-dd'));
           params.append('check_out', format(checkOutDate, 'yyyy-MM-dd'));
-          url = '/api/rooms/available/';
+          url = '/rooms/available/';
         }
         if (guestCount) params.append('guest_count', guestCount);
 
-        const response = await axios.get(`${url}?${params.toString()}`, {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
-          },
-        });
-        setRooms(response.data);
-        setError(null);
-      } catch (err) {
-        console.error('Error fetching rooms:', err);
-        setError('Không thể tải danh sách phòng. Vui lòng thử lại sau.');
+        try {
+          console.log('Fetching rooms with URL:', url, 'Params:', params.toString());
+          const response = await api.get(`${url}?${params.toString()}`);
+          console.log('Rooms response:', response);
+          setRooms(response.data);
+          setError(null);
+        } catch (err) {
+          console.error('Error fetching rooms:', err.response || err.message || err);
+          setError('Không thể tải danh sách phòng. Vui lòng thử lại sau.');
+          setRooms([]);
+        } finally {
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error('Unexpected error:', error);
+        setError('Đã xảy ra lỗi không mong muốn. Vui lòng thử lại sau.');
         setRooms([]);
-      } finally {
         setLoading(false);
       }
     };
