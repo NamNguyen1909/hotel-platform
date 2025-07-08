@@ -89,33 +89,26 @@ class User(AbstractBaseUser, PermissionsMixin):
         return self.full_name or self.username
 
     def update_customer_type(self):
-
         """Cập nhật loại khách hàng dựa trên số lần đặt phòng và tổng chi tiêu"""
-
+        
         bookings_count = self.bookings.count()
-
-        total_spent = self.payments.filter(status=True).aggregate(total=Sum('final_amount'))['total'] or 0
-
+        
+        # Lấy tổng chi tiêu từ các payments đã thanh toán
+        total_spent = self.payments.filter(status=True).aggregate(total=Sum('amount'))['total'] or 0
+        
         self.total_bookings = bookings_count
-
         self.total_spent = total_spent
-
+        
+        # Cập nhật customer_type dựa trên tiêu chí
         if bookings_count >= 20 or total_spent >= 5000:
-
             self.customer_type = CustomerType.SUPER_VIP
-
         elif bookings_count >= 10 or total_spent >= 2000:
-
             self.customer_type = CustomerType.VIP
-
         elif bookings_count >= 3:
-
             self.customer_type = CustomerType.REGULAR
-
         else:
-
             self.customer_type = CustomerType.NEW
-
+        
         self.save()
 
 # Loại phòng
@@ -422,6 +415,7 @@ class Payment(models.Model):
     )
 
     rental = models.ForeignKey(RoomRental, on_delete=models.CASCADE, related_name='payments')
+    customer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='payments', limit_choices_to={'role': 'customer'})
     amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0'))])
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES)
     status = models.BooleanField(default=False)
@@ -432,13 +426,24 @@ class Payment(models.Model):
     class Meta:
         indexes = [
             models.Index(fields=['rental', 'status']),
+            models.Index(fields=['customer', 'status']),
             models.Index(fields=['transaction_id']),
         ]
 
     def save(self, *args, **kwargs):
+        # Tự động gán customer từ rental nếu chưa có
+        if not self.customer and self.rental:
+            self.customer = self.rental.customer
+        
+        # Cập nhật paid_at khi status thành True
         if self.status and not self.paid_at:
             self.paid_at = timezone.now()
+        
         super().save(*args, **kwargs)
+        
+        # Cập nhật customer type sau khi thanh toán
+        if self.customer:
+            self.customer.update_customer_type()
 
     def __str__(self):
         return f"Thanh toán {self.transaction_id} - {self.amount}"
