@@ -13,6 +13,9 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 import os
 from datetime import timedelta
+from dotenv import load_dotenv
+load_dotenv() # Load environment variables from .env file
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -96,7 +99,9 @@ DATABASES = {
         'NAME': 'hoteldb',
         'USER': 'root',
         # 'PASSWORD': 'Admin@123',
-        'PASSWORD': 'ThanhNam*1909',
+        # 'PASSWORD': 'ThanhNam*1909',
+        'PASSWORD': os.getenv('DB_PASSWORD'),  # Lấy từ biến môi trường
+
         'HOST': '' # mặc định localhost
     }
 
