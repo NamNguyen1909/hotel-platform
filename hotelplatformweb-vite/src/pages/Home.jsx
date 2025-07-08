@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import {
   Container,
   Grid,
@@ -12,8 +11,10 @@ import {
   CircularProgress,
   Box,
   Button,
+  Alert,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import api, { endpoints } from '../services/apis';
 
 const Home = () => {
   const [rooms, setRooms] = useState([]);
@@ -25,11 +26,30 @@ const Home = () => {
   useEffect(() => {
     const fetchRooms = async () => {
       try {
-        const response = await axios.get('/api/rooms/');
-        setRooms(response.data);
-        setLoading(false);
+        setLoading(true);
+        const response = await api.get(endpoints.rooms.list);
+        
+        // Xử lý response - đảm bảo luôn có một array
+        let roomsData = [];
+        if (response.data) {
+          if (Array.isArray(response.data)) {
+            roomsData = response.data;
+          } else if (response.data.results && Array.isArray(response.data.results)) {
+            // Trường hợp có pagination
+            roomsData = response.data.results;
+          } else if (typeof response.data === 'object') {
+            // Trường hợp trả về object với các trường khác
+            roomsData = [];
+          }
+        }
+        
+        setRooms(roomsData);
+        setError(null);
       } catch (err) {
+        console.error('Error fetching rooms:', err);
         setError('Không thể tải danh sách phòng. Vui lòng thử lại sau.');
+        setRooms([]); // Đảm bảo rooms luôn là array
+      } finally {
         setLoading(false);
       }
     };
@@ -58,26 +78,30 @@ const Home = () => {
             <CircularProgress />
           </Box>
         ) : error ? (
-          <Typography color="error">{error}</Typography>
-        ) : rooms.length === 0 ? (
-          <Typography>Không có phòng nào khả dụng.</Typography>
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {error}
+          </Alert>
+        ) : !Array.isArray(rooms) || rooms.length === 0 ? (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            Không có phòng nào khả dụng.
+          </Alert>
         ) : (
           <Grid container spacing={3}>
-            {rooms.map((room) => (
+            {Array.isArray(rooms) && rooms.map((room) => (
               <Grid item xs={12} sm={6} md={4} key={room.id}>
                 <Card>
                   <CardMedia
                     component="img"
                     height="140"
                     image={'https://via.placeholder.com/300x140'} // Placeholder vì API không có image
-                    alt={room.room_number}
+                    alt={`Phòng ${room.room_number}`}
                   />
                   <CardContent>
                     <Typography gutterBottom variant="h5" component="div">
-                      Phòng {room.room_number} ({room.room_type_name})
+                      Phòng {room.room_number} ({room.room_type_name || room.room_type?.name || 'N/A'})
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      Giá: {parseFloat(room.room_type_price).toLocaleString('vi-VN')} VND/đêm
+                      Giá: {room.room_type_price ? parseFloat(room.room_type_price).toLocaleString('vi-VN') : 'Liên hệ'} VND/đêm
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       Trạng thái: {room.status === 'available' ? 'Còn trống' : 'Đã đặt'}
