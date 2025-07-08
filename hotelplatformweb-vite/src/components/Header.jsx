@@ -52,7 +52,7 @@ import authUtils from '../services/auth';
 const menuItemsByRole = {
   admin: [
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
-    { text: 'Quản lý phòng', icon: <Hotel />, path: '/rooms' },
+    { text: 'Quản lý phòng', icon: <Hotel />, path: '/rooms-management' },
     { text: 'Quản lý khách hàng', icon: <People />, path: '/customers' },
     { text: 'Đặt phòng', icon: <Book />, path: '/bookings' },
     { text: 'Thanh toán', icon: <Payment />, path: '/payments' },
@@ -62,7 +62,7 @@ const menuItemsByRole = {
   ],
   owner: [
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
-    { text: 'Quản lý phòng', icon: <Hotel />, path: '/rooms' },
+    { text: 'Quản lý phòng', icon: <Hotel />, path: '/rooms-management' },
     { text: 'Quản lý khách hàng', icon: <People />, path: '/customers' },
     { text: 'Đặt phòng', icon: <Book />, path: '/bookings' },
     { text: 'Thanh toán', icon: <Payment />, path: '/payments' },

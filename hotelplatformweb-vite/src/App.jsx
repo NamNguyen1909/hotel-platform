@@ -53,7 +53,7 @@ import Payments from './pages/Payments';
 // import BookingDetail from './pages/BookingDetail';
 // import Notifications from './pages/Notifications';
 
-import RoomsManagements from './pages/RoomsManagement';
+import RoomsManagement from './pages/RoomsManagement';
 
 // Component wrapper để check route và hiển thị header
 const AppContent = () => {
@@ -78,7 +78,7 @@ const AppContent = () => {
         <Route path="/notifications" element={<Notifications />} /> */}
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path='/profile' element={<Profile />} />
-        <Route path="/roomsmanagement" element={<RoomsManagements />} />
+        <Route path="/rooms-management" element={<RoomsManagement />} />
         {/* Thêm các route khác nếu cần */}
       </Routes>
     </>
