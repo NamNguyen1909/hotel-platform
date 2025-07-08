@@ -36,17 +36,46 @@
 
 // export default App
 
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { ThemeProvider } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
+import theme from './theme/theme';
+import Header from './components/Header';
 import Home from './pages/Home';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import Dashboard from './pages/Dashboard';
+
+// Component wrapper để check route và hiển thị header
+const AppContent = () => {
+  const location = useLocation();
+  
+  // Ẩn header ở trang login và register
+  const hideHeaderRoutes = ['/login', '/register'];
+  const shouldShowHeader = !hideHeaderRoutes.includes(location.pathname);
+
+  return (
+    <>
+      {shouldShowHeader && <Header />}
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        {/* Thêm các route khác nếu cần */}
+      </Routes>
+    </>
+  );
+};
 
 function App() {
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        {/* Thêm các route khác nếu cần, ví dụ: <Route path="/room/:id" element={<RoomDetail />} /> */}
-      </Routes>
-    </Router>
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <Router>
+        <AppContent />
+      </Router>
+    </ThemeProvider>
   );
 }
 

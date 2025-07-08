@@ -33,7 +33,7 @@ urlpatterns = [
     
     # App URLs - chỉ include 1 lần
     path('', include('hotelplatform.urls')),  # Root URLs
-    path('api/', include('hotelplatform.urls')),  # API URLs với prefix
+    # path('api/', include('hotelplatform.urls')),  # API URLs với prefix
     
     # JWT authentication endpoints
     path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'), 
