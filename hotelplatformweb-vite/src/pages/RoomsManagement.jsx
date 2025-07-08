@@ -77,6 +77,11 @@ const RoomsManagement = () => {
     amenities: ''
   });
   const [roomTypeLoading, setRoomTypeLoading] = useState(false);
+  
+  // Delete confirmation states
+  const [openDeleteConfirm, setOpenDeleteConfirm] = useState(false);
+  const [roomTypeToDelete, setRoomTypeToDelete] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Fetch rooms data
   useEffect(() => {
@@ -316,13 +321,22 @@ const RoomsManagement = () => {
     }
   };
 
-  const handleDeleteRoomType = async (roomTypeId) => {
-    if (!window.confirm('Bạn có chắc chắn muốn xóa loại phòng này?')) {
-      return;
-    }
+  const handleDeleteRoomType = (roomType) => {
+    setRoomTypeToDelete(roomType);
+    setOpenDeleteConfirm(true);
+  };
+
+  const handleCloseDeleteConfirm = () => {
+    setOpenDeleteConfirm(false);
+    setRoomTypeToDelete(null);
+  };
+
+  const handleConfirmDeleteRoomType = async () => {
+    if (!roomTypeToDelete) return;
 
     try {
-      await api.delete(endpoints.roomTypes.delete(roomTypeId));
+      setDeleteLoading(true);
+      await api.delete(endpoints.roomTypes.delete(roomTypeToDelete.id));
       
       // Refresh room types list
       const roomTypesResponse = await api.get(endpoints.roomTypes.list);
@@ -335,9 +349,14 @@ const RoomsManagement = () => {
         }
       }
       setRoomTypes(roomTypesData);
+      
+      // Close confirmation dialog
+      handleCloseDeleteConfirm();
     } catch (err) {
       console.error('Error deleting room type:', err);
       setError(err.response?.data?.message || 'Không thể xóa loại phòng. Vui lòng thử lại.');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -676,7 +695,7 @@ const RoomsManagement = () => {
                             </Tooltip>
                             <Tooltip title="Xóa">
                               <IconButton 
-                                onClick={() => handleDeleteRoomType(roomType.id)} 
+                                onClick={() => handleDeleteRoomType(roomType)} 
                                 color="error"
                                 disabled={rooms.some(room => room.room_type === roomType.id)}
                               >
@@ -886,6 +905,76 @@ const RoomsManagement = () => {
               ? (roomTypeModalMode === 'add' ? 'Đang thêm...' : 'Đang cập nhật...') 
               : (roomTypeModalMode === 'add' ? 'Thêm loại phòng' : 'Cập nhật')
             }
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete RoomType Confirmation Dialog */}
+      <Dialog 
+        open={openDeleteConfirm} 
+        onClose={handleCloseDeleteConfirm}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <DeleteIcon sx={{ mr: 2, color: 'error.main' }} />
+            <Typography variant="h6">
+              Xác nhận xóa loại phòng
+            </Typography>
+          </Box>
+        </DialogTitle>
+        
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Hành động này không thể hoàn tác!
+          </Alert>
+          
+          {roomTypeToDelete && (
+            <Box>
+              <Typography variant="body1" sx={{ mb: 2 }}>
+                Bạn có chắc chắn muốn xóa loại phòng:
+              </Typography>
+              
+              <Paper sx={{ p: 2, bgcolor: 'grey.50', border: '1px solid', borderColor: 'grey.300' }}>
+                <Typography variant="h6" color="error.main" sx={{ mb: 1 }}>
+                  {roomTypeToDelete.name}
+                </Typography>
+                {roomTypeToDelete.description && (
+                  <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+                    {roomTypeToDelete.description}
+                  </Typography>
+                )}
+                <Typography variant="body2">
+                  <strong>Giá:</strong> {parseFloat(roomTypeToDelete.base_price).toLocaleString('vi-VN')} VND/đêm
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Sức chứa:</strong> {roomTypeToDelete.max_guests} khách
+                </Typography>
+              </Paper>
+
+              {rooms.some(room => room.room_type === roomTypeToDelete.id) && (
+                <Alert severity="error" sx={{ mt: 2 }}>
+                  <strong>Không thể xóa!</strong> Loại phòng này đang được sử dụng bởi {rooms.filter(room => room.room_type === roomTypeToDelete.id).length} phòng.
+                  Vui lòng xóa hoặc chuyển các phòng sang loại khác trước.
+                </Alert>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={handleCloseDeleteConfirm} variant="outlined">
+            Hủy bỏ
+          </Button>
+          <Button 
+            onClick={handleConfirmDeleteRoomType} 
+            variant="contained"
+            color="error"
+            disabled={deleteLoading || (roomTypeToDelete && rooms.some(room => room.room_type === roomTypeToDelete.id))}
+            startIcon={deleteLoading ? <CircularProgress size={16} /> : <DeleteIcon />}
+          >
+            {deleteLoading ? 'Đang xóa...' : 'Xóa loại phòng'}
           </Button>
         </DialogActions>
       </Dialog>
