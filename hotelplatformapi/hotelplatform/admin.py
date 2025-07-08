@@ -10,6 +10,30 @@ from .models import (
     User, RoomType, Room, Booking, RoomRental, Payment, DiscountCode, Notification
 )
 
+# Form tùy chỉnh cho User
+class UserForm(forms.ModelForm):
+    password = forms.CharField(
+        widget=forms.PasswordInput(attrs={'placeholder': 'Nhập mật khẩu'}),
+        help_text="Mật khẩu sẽ được mã hóa tự động",
+        required=False
+    )
+    
+    class Meta:
+        model = User
+        fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Nếu đang chỉnh sửa user (có instance), ẩn trường password
+        if self.instance and self.instance.pk:
+            self.fields.pop('password', None)
+
+    def clean_password(self):
+        password = self.cleaned_data.get('password')
+        if password and len(password) < 6:
+            raise forms.ValidationError("Mật khẩu phải có ít nhất 6 ký tự")
+        return password
+
 # Form tùy chỉnh cho Booking
 class BookingForm(forms.ModelForm):
     special_requests = forms.CharField(widget=forms.Textarea(attrs={'rows': 3}), required=False)
@@ -31,8 +55,27 @@ class UserAdmin(admin.ModelAdmin):
     list_display = ['id', 'username', 'email', 'full_name', 'role', 'phone', 'is_active', 'created_at']
     search_fields = ['username', 'email', 'full_name', 'phone', 'id_card']
     list_filter = ['role', 'is_active', 'created_at']
-    readonly_fields = ['avatar_view', 'password']
+    readonly_fields = ['avatar_view', 'created_at', 'updated_at']
     list_per_page = 20
+    form = UserForm
+    
+    # Fieldsets cho form thêm mới
+    add_fieldsets = (
+        ('Thông tin cơ bản', {
+            'fields': ('username', 'email', 'password', 'full_name', 'role')
+        }),
+        ('Thông tin liên hệ', {
+            'fields': ('phone', 'id_card', 'address')
+        }),
+        ('Hình ảnh', {
+            'fields': ('avatar',)
+        }),
+        ('Trạng thái', {
+            'fields': ('is_active', 'is_staff', 'is_superuser')
+        }),
+    )
+    
+    # Fieldsets cho form chỉnh sửa
     fieldsets = (
         ('Thông tin cơ bản', {
             'fields': ('username', 'email', 'full_name', 'role')
@@ -51,6 +94,17 @@ class UserAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         })
     )
+
+    def get_fieldsets(self, request, obj=None):
+        if not obj:  # Tạo mới
+            return self.add_fieldsets
+        return super().get_fieldsets(request, obj)
+
+    def save_model(self, request, obj, form, change):
+        if not change and 'password' in form.cleaned_data and form.cleaned_data['password']:
+            # Mã hóa mật khẩu khi tạo user mới
+            obj.set_password(form.cleaned_data['password'])
+        super().save_model(request, obj, form, change)
 
     def avatar_view(self, user):
         if user.avatar:
@@ -162,7 +216,8 @@ class RoomRentalAdmin(admin.ModelAdmin):
 
 # Admin cho Payment
 class PaymentAdmin(admin.ModelAdmin):
-    list_display = ['id', 'rental_customer', 'amount_display', 'payment_method', 'status', 'paid_at', 'transaction_id']
+    list_display = ['id', 'rental_customer', 'amount_display', 'payment_method', 'status', 'paid_at', 'transaction_id'
+]
     search_fields = ['rental__customer__username', 'transaction_id']
     list_filter = ['payment_method', 'status', 'paid_at']
     readonly_fields = ['transaction_id', 'amount_display']
