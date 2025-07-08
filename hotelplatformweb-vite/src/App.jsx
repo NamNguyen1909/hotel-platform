@@ -46,6 +46,13 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
+import Rooms from './pages/Rooms';
+import MyBookings from './pages/MyBookings';
+import Payments from './pages/Payments';
+// import RoomDetail from './pages/RoomDetail';
+// import BookingDetail from './pages/BookingDetail';
+// import Notifications from './pages/Notifications';
+
 
 // Component wrapper để check route và hiển thị header
 const AppContent = () => {
@@ -60,10 +67,15 @@ const AppContent = () => {
       {shouldShowHeader && <Header />}
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/rooms" element={<Rooms />} />
+        <Route path="/my-bookings" element={<MyBookings />} />
+        <Route path="/payments" element={<Payments />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path='/profile' element={<Profile />} />
+        <Route path="/profile" element={<Profile />} />
+        {/* <Route path="/room/:id" element={<RoomDetail />} />
+        <Route path="/booking/:id" element={<BookingDetail />} />
+        <Route path="/notifications" element={<Notifications />} /> */}
         {/* Thêm các route khác nếu cần */}
       </Routes>
     </>

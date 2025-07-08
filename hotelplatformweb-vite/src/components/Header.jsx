@@ -21,6 +21,8 @@ import {
   Badge,
   useTheme,
   useMediaQuery,
+  TextField,
+  InputAdornment,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -40,8 +42,10 @@ import {
   AdminPanelSettings,
   RoomService,
   Receipt,
+  Search as SearchIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
+import axios from 'axios';
 import authUtils from '../services/auth';
 
 // Định nghĩa menu items theo role
@@ -93,12 +97,13 @@ const Header = () => {
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  
+
   const [anchorElUser, setAnchorElUser] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState('guest');
-  const [notifications, setNotifications] = useState(3); // Mock notifications
+  const [notifications, setNotifications] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Lấy thông tin user và role
   useEffect(() => {
@@ -121,6 +126,36 @@ const Header = () => {
     fetchUserInfo();
   }, [location.pathname]);
 
+  // Lấy danh sách thông báo
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      if (authUtils.isAuthenticated()) {
+        try {
+          const response = await axios.get('/api/notifications/', {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem('token')}`,
+            },
+          });
+          const unreadNotifications = response.data.filter(notification => !notification.is_read);
+          setNotifications(unreadNotifications);
+        } catch (error) {
+          console.error('Error fetching notifications:', error);
+        }
+      }
+    };
+
+    fetchNotifications();
+  }, []);
+
+  // Xử lý tìm kiếm
+  const handleSearch = (event) => {
+    event.preventDefault();
+    if (searchQuery.trim()) {
+      navigate(`/rooms?search=${encodeURIComponent(searchQuery)}`);
+      setSearchQuery('');
+    }
+  };
+
   const handleOpenUserMenu = (event) => {
     setAnchorElUser(event.currentTarget);
   };
@@ -142,13 +177,29 @@ const Header = () => {
   const handleLogout = async () => {
     await authUtils.logout();
     handleCloseUserMenu();
+    navigate('/login');
+  };
+
+  // Đánh dấu thông báo đã đọc
+  const handleNotificationsClick = async () => {
+    try {
+      await axios.post('/api/notifications/mark_all_as_read/', {}, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      setNotifications([]);
+      handleNavigation('/notifications');
+    } catch (error) {
+      console.error('Error marking notifications as read:', error);
+    }
   };
 
   // Lấy menu items theo role hiện tại
   const menuItems = menuItemsByRole[userRole] || menuItemsByRole.guest;
 
   // User menu items
-  const userMenuItems = authUtils.isAuthenticated() 
+  const userMenuItems = authUtils.isAuthenticated()
     ? [
         { text: 'Hồ sơ', action: () => handleNavigation('/profile') },
         { text: 'Cài đặt', action: () => handleNavigation('/account-settings') },
@@ -190,15 +241,38 @@ const Header = () => {
           </ListItem>
         ))}
       </List>
+      <Box sx={{ px: 2, py: 1 }}>
+        <TextField
+          fullWidth
+          variant="outlined"
+          placeholder="Tìm kiếm phòng..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && handleSearch(e)}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon />
+              </InputAdornment>
+            ),
+          }}
+          sx={{ mt: 1 }}
+        />
+      </Box>
     </Box>
   );
 
   return (
     <>
-      <AppBar position="sticky" elevation={2}>
+      <AppBar
+        position="sticky"
+        elevation={2}
+        sx={{
+          background: 'linear-gradient(90deg, #8B4513 0%, #A0522D 100%)',
+        }}
+      >
         <Container maxWidth="xl">
           <Toolbar disableGutters>
-            {/* Logo cho desktop */}
             <Typography
               variant="h6"
               noWrap
@@ -210,14 +284,13 @@ const Header = () => {
                 fontFamily: 'Inter',
                 fontWeight: 700,
                 cursor: 'pointer',
-                color: 'inherit',
+                color: '#DAA520',
                 textDecoration: 'none',
               }}
             >
               🏨 Hotel Platform
             </Typography>
 
-            {/* Mobile menu button */}
             <Box sx={{ flexGrow: 1, display: { xs: 'flex', md: 'none' } }}>
               <IconButton
                 size="large"
@@ -225,11 +298,10 @@ const Header = () => {
                 onClick={handleDrawerToggle}
                 color="inherit"
               >
-                <MenuIcon />
+                <MenuIcon sx={{ color: '#DAA520' }} />
               </IconButton>
             </Box>
 
-            {/* Logo cho mobile */}
             <Typography
               variant="h5"
               noWrap
@@ -242,15 +314,45 @@ const Header = () => {
                 fontFamily: 'Inter',
                 fontWeight: 700,
                 cursor: 'pointer',
-                color: 'inherit',
+                color: '#DAA520',
                 textDecoration: 'none',
               }}
             >
               🏨 Hotel
             </Typography>
 
-            {/* Desktop menu */}
-            <Box sx={{ flexGrow: 1, display: { xs: 'none', md: 'flex' } }}>
+            <Box sx={{ flexGrow: 1, display: { xs: 'none', md: 'flex' }, mr: 2 }}>
+              <TextField
+                variant="outlined"
+                placeholder="Tìm kiếm phòng..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSearch(e)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon sx={{ color: '#DAA520' }} />
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{
+                  maxWidth: 300,
+                  backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                  borderRadius: 1,
+                  '& .MuiInputBase-input': {
+                    color: '#DAA520',
+                  },
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'rgba(255, 255, 255, 0.3)',
+                  },
+                  '&:hover .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'rgba(255, 255, 255, 0.5)',
+                  },
+                }}
+              />
+            </Box>
+
+            <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
               {menuItems.map((item) => (
                 <Button
                   key={item.text}
@@ -259,10 +361,11 @@ const Header = () => {
                   sx={{
                     my: 2,
                     mx: 1,
-                    color: 'white',
+                    color: '#DAA520',
                     display: 'block',
                     textTransform: 'none',
                     fontWeight: 500,
+                    fontFamily: 'Inter',
                     backgroundColor: location.pathname === item.path ? 'rgba(255,255,255,0.1)' : 'transparent',
                     '&:hover': {
                       backgroundColor: 'rgba(255,255,255,0.1)',
@@ -274,18 +377,17 @@ const Header = () => {
               ))}
             </Box>
 
-            {/* Right side - Notifications & User menu */}
             <Box sx={{ flexGrow: 0, display: 'flex', alignItems: 'center' }}>
               {authUtils.isAuthenticated() && (
                 <Tooltip title="Thông báo">
                   <IconButton
                     size="large"
                     color="inherit"
-                    onClick={() => handleNavigation('/notifications')}
+                    onClick={handleNotificationsClick}
                     sx={{ mr: 1 }}
                   >
-                    <Badge badgeContent={notifications} color="error">
-                      <Notifications />
+                    <Badge badgeContent={notifications.length} color="error">
+                      <Notifications sx={{ color: '#DAA520' }} />
                     </Badge>
                   </IconButton>
                 </Tooltip>
@@ -294,9 +396,9 @@ const Header = () => {
               <Tooltip title="Tài khoản">
                 <IconButton onClick={handleOpenUserMenu} sx={{ p: 0 }}>
                   {user?.avatar ? (
-                    <Avatar alt={user.username} src={user.avatar} />
+                    <Avatar alt={user.full_name} src={user.avatar} />
                   ) : (
-                    <Avatar sx={{ bgcolor: 'secondary.main' }}>
+                    <Avatar sx={{ bgcolor: '#DAA520' }}>
                       {user?.full_name?.charAt(0)?.toUpperCase() || <AccountCircle />}
                     </Avatar>
                   )}
@@ -321,20 +423,20 @@ const Header = () => {
               >
                 {user && (
                   <Box sx={{ px: 2, py: 1, borderBottom: '1px solid #eee' }}>
-                    <Typography variant="subtitle1" fontWeight="bold">
+                    <Typography variant="subtitle1" fontWeight="bold" fontFamily="Inter">
                       {user.full_name}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       {user.email}
                     </Typography>
-                    <Typography variant="caption" color="primary.main" fontWeight="bold">
+                    <Typography variant="caption" color="primary.main" fontWeight="bold" fontFamily="Inter">
                       {userRole.toUpperCase()}
                     </Typography>
                   </Box>
                 )}
                 {userMenuItems.map((item, index) => (
                   <MenuItem key={index} onClick={item.action}>
-                    <Typography textAlign="center">{item.text}</Typography>
+                    <Typography textAlign="center" fontFamily="Inter">{item.text}</Typography>
                   </MenuItem>
                 ))}
               </Menu>
@@ -343,7 +445,6 @@ const Header = () => {
         </Container>
       </AppBar>
 
-      {/* Mobile drawer */}
       <Drawer
         variant="temporary"
         open={mobileOpen}
@@ -353,8 +454,8 @@ const Header = () => {
         }}
         sx={{
           display: { xs: 'block', md: 'none' },
-          '& .MuiDrawer-paper': { 
-            boxSizing: 'border-box', 
+          '& .MuiDrawer-paper': {
+            boxSizing: 'border-box',
             width: 280,
             background: 'linear-gradient(145deg, #ffffff 0%, #fefefe 100%)',
           },

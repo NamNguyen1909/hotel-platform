@@ -1,7 +1,7 @@
-// Authentication utilities
 import api, { endpoints } from './apis';
 
-export const authUtils = {
+// Authentication utilities
+const authUtils = {
   // Check if user is authenticated
   isAuthenticated: () => {
     const token = localStorage.getItem('access_token');
@@ -15,41 +15,69 @@ export const authUtils = {
       return response.data;
     } catch (error) {
       console.error('Error getting current user:', error);
-      // Return mock data for development
-      const token = localStorage.getItem('access_token');
-      if (token) {
-        return {
-          id: 1,
-          username: 'demo_user',
-          email: 'demo@hotel.com',
-          full_name: 'Demo User',
-          role: 'staff', // admin, staff, customer
-          avatar: null,
-        };
+      if (process.env.NODE_ENV === 'development') {
+        // Return mock data only in development
+        const token = localStorage.getItem('access_token');
+        if (token) {
+          return {
+            id: 1,
+            username: 'demo_user',
+            email: 'demo@hotel.com',
+            full_name: 'Demo User',
+            role: 'customer', // Change to 'customer' to match backend
+            avatar: null,
+          };
+        }
       }
-      return null;
+      throw error; // Throw error in production
+    }
+  },
+
+  // Login user
+  login: async (email, password) => {
+    try {
+      const response = await api.post(endpoints.auth.token, {
+        email,
+        password,
+      });
+      const { access, refresh } = response.data;
+      authUtils.setTokens(access, refresh);
+      return response.data;
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
     }
   },
 
   // Logout user
   logout: async () => {
     try {
-      const refreshToken = localStorage.getItem('refresh_token');
-      if (refreshToken) {
-        await api.post(endpoints.auth.logout, {
-          refresh: refreshToken
-        });
-      }
-    } catch (error) {
-      console.error('Error during logout:', error);
-    } finally {
-      // Clear tokens regardless of API call result
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
       delete api.defaults.headers.common['Authorization'];
-      
-      // Redirect to login
       window.location.href = '/login';
+    } catch (error) {
+      console.error('Logout error:', error);
+      throw error;
+    }
+  },
+
+  // Refresh token
+  refreshToken: async () => {
+    try {
+      const refreshToken = localStorage.getItem('refresh_token');
+      if (!refreshToken) {
+        throw new Error('No refresh token found');
+      }
+      const response = await api.post(endpoints.auth.refresh, {
+        refresh: refreshToken,
+      });
+      const { access } = response.data;
+      authUtils.setTokens(access, refreshToken);
+      return access;
+    } catch (error) {
+      console.error('Error refreshing token:', error);
+      throw error;
     }
   },
 
@@ -70,7 +98,30 @@ export const authUtils = {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     delete api.defaults.headers.common['Authorization'];
-  }
+  },
+
+  // Setup axios interceptors
+  setupInterceptors: () => {
+    api.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        const originalRequest = error.config;
+        if (error.response?.status === 401 && !originalRequest._retry) {
+          originalRequest._retry = true;
+          try {
+            const newToken = await authUtils.refreshToken();
+            originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            return api(originalRequest);
+          } catch (refreshError) {
+            authUtils.clearTokens();
+            window.location.href = '/login';
+            return Promise.reject(refreshError);
+          }
+        }
+        return Promise.reject(error);
+      }
+    );
+  },
 };
 
 export default authUtils;

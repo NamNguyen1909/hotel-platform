@@ -30,7 +30,7 @@ const Home = () => {
     const fetchRooms = async () => {
       try {
         setLoading(true);
-        const response = await axios.get(`/rooms/${searchQuery ? `?search=${encodeURIComponent(searchQuery)}` : ''}`, {
+        const response = await axios.get(`/api/rooms/${searchQuery ? `?search=${encodeURIComponent(searchQuery)}` : ''}`, {
           headers: {
             Authorization: `Bearer ${localStorage.getItem('token')}`,
           },

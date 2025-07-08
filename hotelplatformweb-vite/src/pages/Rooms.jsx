@@ -1,0 +1,368 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Container,
+  Grid,
+  Card,
+  CardContent,
+  CardMedia,
+  Typography,
+  CircularProgress,
+  Box,
+  Button,
+  Alert,
+  TextField,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Select,
+  InputAdornment,
+} from '@mui/material';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { Search as SearchIcon } from '@mui/icons-material';
+import { useNavigate, useLocation } from 'react-router-dom';
+import axios from 'axios';
+import vi from 'date-fns/locale/vi';
+import { format } from 'date-fns';
+
+const Rooms = () => {
+  const [rooms, setRooms] = useState([]);
+  const [roomTypes, setRoomTypes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // State cho bộ lọc
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roomTypeFilter, setRoomTypeFilter] = useState('');
+  const [checkInDate, setCheckInDate] = useState(null);
+  const [checkOutDate, setCheckOutDate] = useState(null);
+  const [guestCount, setGuestCount] = useState('');
+
+  // Lấy query params từ URL
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    setSearchQuery(searchParams.get('search') || '');
+    setRoomTypeFilter(searchParams.get('room_type') || '');
+    setCheckInDate(searchParams.get('check_in') ? new Date(searchParams.get('check_in')) : null);
+    setCheckOutDate(searchParams.get('check_out') ? new Date(searchParams.get('check_out')) : null);
+    setGuestCount(searchParams.get('guest_count') || '');
+  }, [location.search]);
+
+  // Lấy danh sách loại phòng
+  useEffect(() => {
+    const fetchRoomTypes = async () => {
+      try {
+        const response = await axios.get('/api/room-types/', {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`,
+          },
+        });
+        setRoomTypes(response.data);
+      } catch (err) {
+        console.error('Error fetching room types:', err);
+      }
+    };
+    fetchRoomTypes();
+  }, []);
+
+  // Lấy danh sách phòng
+  useEffect(() => {
+    const fetchRooms = async () => {
+      try {
+        setLoading(true);
+        let url = '/api/rooms/';
+        const params = new URLSearchParams();
+
+        if (searchQuery) params.append('search', searchQuery);
+        if (roomTypeFilter) params.append('room_type', roomTypeFilter);
+        if (checkInDate && checkOutDate) {
+          params.append('check_in', format(checkInDate, 'yyyy-MM-dd'));
+          params.append('check_out', format(checkOutDate, 'yyyy-MM-dd'));
+          url = '/api/rooms/available/';
+        }
+        if (guestCount) params.append('guest_count', guestCount);
+
+        const response = await axios.get(`${url}?${params.toString()}`, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`,
+          },
+        });
+        setRooms(response.data);
+        setError(null);
+      } catch (err) {
+        console.error('Error fetching rooms:', err);
+        setError('Không thể tải danh sách phòng. Vui lòng thử lại sau.');
+        setRooms([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchRooms();
+  }, [searchQuery, roomTypeFilter, checkInDate, checkOutDate, guestCount]);
+
+  // Xử lý tìm kiếm và lọc
+  const handleFilter = () => {
+    const params = new URLSearchParams();
+    if (searchQuery) params.append('search', searchQuery);
+    if (roomTypeFilter) params.append('room_type', roomTypeFilter);
+    if (checkInDate) params.append('check_in', format(checkInDate, 'yyyy-MM-dd'));
+    if (checkOutDate) params.append('check_out', format(checkOutDate, 'yyyy-MM-dd'));
+    if (guestCount) params.append('guest_count', guestCount);
+    navigate(`/rooms?${params.toString()}`);
+  };
+
+  const handleResetFilter = () => {
+    setSearchQuery('');
+    setRoomTypeFilter('');
+    setCheckInDate(null);
+    setCheckOutDate(null);
+    setGuestCount('');
+    navigate('/rooms');
+  };
+
+  return (
+    <Box sx={{ flexGrow: 1, bgcolor: 'background.default', minHeight: '100vh' }}>
+      <Container sx={{ mt: 4, mb: 4 }}>
+        <Typography
+          variant="h4"
+          gutterBottom
+          sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 700 }}
+        >
+          Tìm Kiếm Phòng
+        </Typography>
+
+        {/* Bộ lọc */}
+        <Box
+          sx={{
+            mb: 4,
+            p: 2,
+            bgcolor: 'rgba(139, 69, 19, 0.1)',
+            borderRadius: 2,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          }}
+        >
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={3}>
+              <TextField
+                fullWidth
+                variant="outlined"
+                placeholder="Tìm kiếm phòng..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleFilter()}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon sx={{ color: '#DAA520' }} />
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{
+                  bgcolor: 'rgba(255, 255, 255, 0.9)',
+                  '& .MuiInputBase-input': { fontFamily: 'Inter' },
+                  '& .MuiOutlinedInput-notchedOutline': { borderColor: '#DAA520' },
+                  '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#B8860B' },
+                }}
+              />
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <FormControl fullWidth sx={{ bgcolor: 'rgba(255, 255, 255, 0.9)' }}>
+                <InputLabel sx={{ fontFamily: 'Inter' }}>Loại phòng</InputLabel>
+                <Select
+                  value={roomTypeFilter}
+                  onChange={(e) => setRoomTypeFilter(e.target.value)}
+                  label="Loại phòng"
+                  sx={{ fontFamily: 'Inter' }}
+                >
+                  <MenuItem value="">Tất cả</MenuItem>
+                  {roomTypes.map((type) => (
+                    <MenuItem key={type.id} value={type.id} sx={{ fontFamily: 'Inter' }}>
+                      {type.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={2}>
+              <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={vi}>
+                <DatePicker
+                  label="Ngày nhận phòng"
+                  value={checkInDate}
+                  onChange={(newValue) => setCheckInDate(newValue)}
+                  minDate={new Date()}
+                  maxDate={new Date(new Date().setDate(new Date().getDate() + 28))}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      fullWidth
+                      sx={{
+                        bgcolor: 'rgba(255, 255, 255, 0.9)',
+                        '& .MuiInputBase-input': { fontFamily: 'Inter' },
+                        '& .MuiOutlinedInput-notchedOutline': { borderColor: '#DAA520' },
+                      }}
+                    />
+                  )}
+                />
+              </LocalizationProvider>
+            </Grid>
+            <Grid item xs={12} md={2}>
+              <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={vi}>
+                <DatePicker
+                  label="Ngày trả phòng"
+                  value={checkOutDate}
+                  onChange={(newValue) => setCheckOutDate(newValue)}
+                  minDate={checkInDate || new Date()}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      fullWidth
+                      sx={{
+                        bgcolor: 'rgba(255, 255, 255, 0.9)',
+                        '& .MuiInputBase-input': { fontFamily: 'Inter' },
+                        '& .MuiOutlinedInput-notchedOutline': { borderColor: '#DAA520' },
+                      }}
+                    />
+                  )}
+                />
+              </LocalizationProvider>
+            </Grid>
+            <Grid item xs={12} md={2}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Số khách"
+                value={guestCount}
+                onChange={(e) => setGuestCount(e.target.value)}
+                InputProps={{ inputProps: { min: 1 } }}
+                sx={{
+                  bgcolor: 'rgba(255, 255, 255, 0.9)',
+                  '& .MuiInputBase-input': { fontFamily: 'Inter' },
+                  '& .MuiOutlinedInput-notchedOutline': { borderColor: '#DAA520' },
+                }}
+              />
+            </Grid>
+            <Grid item xs={12} sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                variant="contained"
+                onClick={handleFilter}
+                sx={{
+                  bgcolor: '#DAA520',
+                  '&:hover': { bgcolor: '#B8860B' },
+                  fontFamily: 'Inter',
+                }}
+              >
+                Lọc
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={handleResetFilter}
+                sx={{
+                  borderColor: '#DAA520',
+                  color: '#DAA520',
+                  '&:hover': { borderColor: '#B8860B', color: '#B8860B' },
+                  fontFamily: 'Inter',
+                }}
+              >
+                Xóa bộ lọc
+              </Button>
+            </Grid>
+          </Grid>
+        </Box>
+
+        {/* Danh sách phòng */}
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+            <CircularProgress sx={{ color: '#DAA520' }} />
+          </Box>
+        ) : error ? (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {error}
+          </Alert>
+        ) : !Array.isArray(rooms) || rooms.length === 0 ? (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            Không có phòng nào khả dụng.
+          </Alert>
+        ) : (
+          <Grid container spacing={3}>
+            {rooms.map((room) => (
+              <Grid item xs={12} sm={6} md={4} key={room.id}>
+                <Card
+                  sx={{
+                    borderRadius: 2,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                    '&:hover': {
+                      boxShadow: '0 6px 16px rgba(0,0,0,0.2)',
+                      transform: 'translateY(-4px)',
+                      transition: 'all 0.3s ease',
+                    },
+                  }}
+                >
+                  <CardMedia
+                    component="img"
+                    height="140"
+                    image={room.room_type?.image || 'https://via.placeholder.com/300x140'}
+                    alt={`Phòng ${room.room_number}`}
+                  />
+                  <CardContent>
+                    <Typography
+                      gutterBottom
+                      variant="h5"
+                      component="div"
+                      sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 600 }}
+                    >
+                      Phòng {room.room_number} ({room.room_type_name || 'N/A'})
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'Inter' }}>
+                      Giá: {parseFloat(room.room_type_price).toLocaleString('vi-VN')} VND/đêm
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'Inter' }}>
+                      Trạng thái: {room.status === 'available' ? 'Còn trống' : room.status === 'booked' ? 'Đã đặt' : 'Đang sử dụng'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'Inter' }}>
+                      Tối đa: {room.room_type?.max_guests || 'N/A'} khách
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'Inter' }}>
+                      Tiện nghi: {room.room_type?.amenities || 'N/A'}
+                    </Typography>
+                    <Button
+                      variant="contained"
+                      sx={{
+                        mt: 2,
+                        bgcolor: '#DAA520',
+                        '&:hover': { bgcolor: '#B8860B' },
+                        fontFamily: 'Inter',
+                      }}
+                      onClick={() => navigate(`/room/${room.id}`)}
+                    >
+                      Xem Chi Tiết
+                    </Button>
+                    {room.status === 'available' && (
+                      <Button
+                        variant="contained"
+                        sx={{
+                          mt: 1,
+                          ml: 1,
+                          bgcolor: '#8B4513',
+                          '&:hover': { bgcolor: '#A0522D' },
+                          fontFamily: 'Inter',
+                        }}
+                        onClick={() => navigate('/book', { state: { roomId: room.id, checkInDate, checkOutDate, guestCount } })}
+                      >
+                        Đặt Phòng Ngay
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        )}
+      </Container>
+    </Box>
+  );
+};
+
+export default Rooms;
