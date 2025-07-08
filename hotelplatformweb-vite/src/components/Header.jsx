@@ -207,7 +207,7 @@ const Header = () => {
               sx={{
                 mr: 2,
                 display: { xs: 'none', md: 'flex' },
-                fontFamily: 'Playfair Display',
+                fontFamily: 'Inter',
                 fontWeight: 700,
                 cursor: 'pointer',
                 color: 'inherit',
@@ -239,7 +239,7 @@ const Header = () => {
                 mr: 2,
                 display: { xs: 'flex', md: 'none' },
                 flexGrow: 1,
-                fontFamily: 'Playfair Display',
+                fontFamily: 'Inter',
                 fontWeight: 700,
                 cursor: 'pointer',
                 color: 'inherit',

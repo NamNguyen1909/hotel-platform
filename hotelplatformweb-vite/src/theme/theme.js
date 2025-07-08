@@ -1,4 +1,5 @@
 // Cấu hình Material UI cho Hotel Management System
+// Sử dụng font Inter (sans-serif) để tạo UI gọn gàng, hiện đại và dễ đọc
 import { createTheme } from '@mui/material/styles';
 
 const theme = createTheme({
@@ -50,38 +51,42 @@ const theme = createTheme({
   },
   typography: {
     fontFamily: [
-      'Playfair Display', // Font sang trọng cho tiêu đề
+      'Inter', // Font sans-serif hiện đại và sang trọng
       'Roboto', 
       '-apple-system',
       'BlinkMacSystemFont',
       '"Segoe UI"',
       '"Helvetica Neue"',
       'Arial',
-      'serif'
+      'sans-serif'
     ].join(','),
     h1: {
-      fontFamily: 'Playfair Display, serif',
+      fontFamily: 'Inter, sans-serif',
       fontWeight: 700,
       fontSize: '2.5rem',
       color: '#8B4513',
+      letterSpacing: '-0.02em',
     },
     h2: {
-      fontFamily: 'Playfair Display, serif',
+      fontFamily: 'Inter, sans-serif',
       fontWeight: 600,
       fontSize: '2rem',
       color: '#8B4513',
+      letterSpacing: '-0.01em',
     },
     h3: {
-      fontFamily: 'Playfair Display, serif',
+      fontFamily: 'Inter, sans-serif',
       fontWeight: 600,
       fontSize: '1.75rem',
       color: '#8B4513',
+      letterSpacing: '-0.01em',
     },
     h4: {
-      fontFamily: 'Playfair Display, serif',
+      fontFamily: 'Inter, sans-serif',
       fontWeight: 600,
       fontSize: '1.5rem',
       color: '#8B4513',
+      letterSpacing: '-0.005em',
     },
     h5: {
       fontWeight: 500,
