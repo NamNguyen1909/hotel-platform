@@ -13,7 +13,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.views import APIView
 from rest_framework.filters import SearchFilter, OrderingFilter
-from django_filters.rest_framework import DjangoFilterBackend
+# from django_filters.rest_framework import DjangoFilterBackend
 
 
 
@@ -220,11 +220,11 @@ class RoomViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
     queryset = Room.objects.all()
     serializer_class = RoomSerializer
     permission_classes = [IsAuthenticated]
-    filter_backends = [SearchFilter, OrderingFilter, DjangoFilterBackend]
+    filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ['room_number', 'room_type__name']
     ordering_fields = ['room_number', 'status', 'created_at']
     ordering = ['room_number']
-    filterset_fields = ['status', 'room_type']
+    # filterset_fields = ['status', 'room_type']
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
