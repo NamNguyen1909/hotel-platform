@@ -103,7 +103,7 @@ export const endpoints = {
     update: (id) => `/rooms/${id}/`,
     delete: (id) => `/rooms/${id}/`,
     available: '/rooms/available/',
-    search: '/rooms/search/',
+    low_performance: '/rooms/low-performance/',
   },
   
   // Room types endpoints
