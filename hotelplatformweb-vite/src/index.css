@@ -1,4 +1,4 @@
-:root {
+/* :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
@@ -65,4 +65,76 @@ button:focus-visible {
   button {
     background-color: #f9f9f9;
   }
+} */
+
+/* Reset cơ bản và thiết lập font tương thích với Material UI */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+/* Reset các thẻ cơ bản */
+a {
+  text-decoration: none;
+  color: #1976d2; /* Màu primary của Material UI */
+}
+
+a:hover {
+  color: #115293; /* Màu primary đậm hơn khi hover */
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  font-weight: 500; /* Phù hợp với Material UI typography */
+}
+
+button {
+  font-family: inherit;
+}
+
+/* Theme light */
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  button {
+    background-color: #f9f9f9;
+  }
+}
+
+/* Theme dark */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: rgba(255, 255, 255, 0.87);
+    background-color: #242424;
+  }
+  a:hover {
+    color: #535bf2;
+  }
+  button {
+    background-color: #1a1a1a;
+  }
+}
+
+/* Đảm bảo container full-width cho Material UI Grid */
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* Style cho các thành phần Material UI tùy chỉnh (nếu cần) */
+.MuiCard-root {
+  transition: box-shadow 0.3s ease;
+}
+
+.MuiCard-root:hover {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
