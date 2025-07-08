@@ -46,6 +46,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
+import RoomsManagements from './pages/RoomsManagement';
 
 // Component wrapper để check route và hiển thị header
 const AppContent = () => {
@@ -64,6 +65,7 @@ const AppContent = () => {
         <Route path="/register" element={<Register />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path='/profile' element={<Profile />} />
+        <Route path="/roomsmanagement" element={<RoomsManagements />} />
         {/* Thêm các route khác nếu cần */}
       </Routes>
     </>

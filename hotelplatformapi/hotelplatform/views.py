@@ -171,7 +171,7 @@ class UserViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
         })
 
 
-class RoomTypeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
+class RoomTypeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView,generics.DestroyAPIView):
     """
     ViewSet quản lý RoomType
     """
@@ -213,7 +213,7 @@ class RoomTypeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveA
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class RoomViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
+class RoomViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView,generics.DestroyAPIView):
     """
     ViewSet quản lý Room
     """
@@ -381,7 +381,7 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         queryset = Booking.objects.select_related('customer').prefetch_related('rooms').all()
         
         # Filter by user role
-        if self.request.user.role == 'customer':
+        if self.request.user.is_authenticated and self.request.user.role == 'customer':
             queryset = queryset.filter(customer=self.request.user)
         
         # Filter by status
@@ -477,7 +477,7 @@ class RoomRentalViewSet(viewsets.ViewSet, generics.ListAPIView, generics.Retriev
         queryset = RoomRental.objects.select_related('customer', 'booking').prefetch_related('rooms').all()
         
         # Filter by user role
-        if self.request.user.role == 'customer':
+        if self.request.user.is_authenticated and self.request.user.role == 'customer':
             queryset = queryset.filter(customer=self.request.user)
         
         return queryset
