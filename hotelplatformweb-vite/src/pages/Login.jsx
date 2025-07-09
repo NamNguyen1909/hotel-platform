@@ -185,7 +185,7 @@ const Login = () => {
                       edge="end"
                       disabled={loading}
                     >
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                      {!showPassword ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
                   </InputAdornment>
                 ),

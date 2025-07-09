@@ -82,10 +82,12 @@ export const endpoints = {
     update: (id) => `/users/${id}/`,
     delete: (id) => `/users/${id}/`,
     profile: '/users/profile/',
+    updateProfile: '/users/update_profile/',
     changePassword: '/users/change-password/',
     staffslist: '/users/staff_list/',
     createStaff: '/users/create_staff/',
-    toggleActiveStaff: (id) => `/users/${id}/toggle_active_staff/`
+    customersList: '/users/customers_list/',
+    toggleActive: (id) => `/users/${id}/toggle_active/`
   },
   
   // Hotel management endpoints

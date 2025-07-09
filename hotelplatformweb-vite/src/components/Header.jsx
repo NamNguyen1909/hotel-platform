@@ -49,14 +49,14 @@ import authUtils from '../services/auth';
 const menuItemsByRole = {
   admin: [
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
-    { text: 'Quản lý phòng', icon: <Hotel />, path: '/rooms' },
-    { text: 'Quản lý khách hàng', icon: <People />, path: '/customers' },
-    { text: 'Quản lý nhân viên', icon: <AdminPanelSettings />, path: '/staff' },
+    { text: 'Quản lý phòng', icon: <Hotel />, path: '/rooms-management' },
+    { text: 'Quản lý khách hàng', icon: <People />, path: '/customers-management' },
+    { text: 'Quản lý nhân viên', icon: <AdminPanelSettings />, path: '/staffs-management' },
   ],
   owner: [
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
     { text: 'Quản lý phòng', icon: <Hotel />, path: '/rooms-management' },
-    { text: 'Quản lý khách hàng', icon: <People />, path: '/customers' },
+    { text: 'Quản lý khách hàng', icon: <People />, path: '/customers-management' },
     { text: 'Quản lý nhân viên', icon: <AdminPanelSettings />, path: '/staffs-management' },
   ],
   staff: [

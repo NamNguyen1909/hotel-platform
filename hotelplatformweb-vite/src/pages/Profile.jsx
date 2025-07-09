@@ -141,7 +141,7 @@ const Profile = () => {
       formData.append('avatar', avatarFile);
 
       // Upload avatar
-      const response = await api.put(endpoints.users.update(user.id), formData, {
+      const response = await api.put(endpoints.users.updateProfile, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -206,7 +206,7 @@ const Profile = () => {
       if (!updateData.id_card?.trim()) delete updateData.id_card;
       if (!updateData.address?.trim()) delete updateData.address;
 
-      const response = await api.put(endpoints.users.update(user.id), updateData);
+      const response = await api.put(endpoints.users.updateProfile, updateData);
 
       if (response.data) {
         setUser(prev => ({ ...prev, ...response.data }));

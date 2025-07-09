@@ -295,7 +295,7 @@ const Register = () => {
                       edge="end"
                       disabled={loading}
                     >
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                      {!showPassword ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
                   </InputAdornment>
                 ),
@@ -325,7 +325,7 @@ const Register = () => {
                       edge="end"
                       disabled={loading}
                     >
-                      {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
+                      {!showConfirmPassword ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
                   </InputAdornment>
                 ),

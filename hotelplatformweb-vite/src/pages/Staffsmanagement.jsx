@@ -223,7 +223,7 @@ const StaffsManagement = () => {
     setSubmitLoading(true);
     try {
       // Gọi API mới cho toggle active staff
-      const response = await api.post(endpoints.users.toggleActiveStaff(currentStaff.id));
+      const response = await api.post(endpoints.users.toggleActive(currentStaff.id));
       
       // Lấy thông báo từ backend response
       const message = response.data.message || 'Thay đổi trạng thái nhân viên thành công';

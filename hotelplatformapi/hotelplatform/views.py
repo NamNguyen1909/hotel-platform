@@ -49,7 +49,7 @@ def home(request):
 
 # ================================ VIEWSETS ================================
 
-class UserViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
+class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
     """
     ViewSet quản lý User kết hợp với generics
     """
@@ -71,9 +71,11 @@ class UserViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
             return [AllowAny()]
         elif self.action in ['list', 'vip_customers']:
             return [CanManageUsers()]
-        elif self.action in ['create_staff', 'staff_list', 'toggle_active_staff']:
+        elif self.action in ['create_staff', 'staff_list']:
             return [CanManageStaff()]
-        elif self.action in ['update', 'partial_update', 'destroy']:
+        elif self.action in ['customers_list', 'toggle_active']:
+            return [CanManageUsers()]
+        elif self.action in ['update', 'partial_update']:
             return [CanUpdateProfile()]
         return [IsAuthenticated()]
 
@@ -171,9 +173,9 @@ class UserViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
         })
 
     @action(detail=True, methods=['post'])
-    def toggle_active_staff(self, request, pk=None):
+    def toggle_active(self, request, pk=None):
         """
-        Kích hoạt/vô hiệu hóa nhân viên (chỉ dành cho Admin và Owner)
+        Kích hoạt/vô hiệu hóa user (nhân viên hoặc khách hàng) - chỉ dành cho Admin và Owner
         """
         # Kiểm tra quyền
         if not (request.user.role in ['admin', 'owner']):
@@ -185,14 +187,14 @@ class UserViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
         try:
             user = get_object_or_404(User, pk=pk)
             
-            # Chỉ cho phép toggle active cho staff
-            if user.role != 'staff':
+            # Chỉ cho phép toggle active cho staff và customer
+            if user.role not in ['staff', 'customer']:
                 return Response(
-                    {'error': 'Chỉ có thể thay đổi trạng thái nhân viên'}, 
+                    {'error': 'Chỉ có thể thay đổi trạng thái nhân viên hoặc khách hàng'}, 
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Không cho phép owner tự vô hiệu hóa chính mình
+            # Không cho phép user tự vô hiệu hóa chính mình
             if user == request.user:
                 return Response(
                     {'error': 'Không thể thay đổi trạng thái của chính mình'}, 
@@ -204,9 +206,10 @@ class UserViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
             user.save()
             
             action_text = 'kích hoạt' if user.is_active else 'vô hiệu hóa'
+            user_type = 'nhân viên' if user.role == 'staff' else 'khách hàng'
             
             return Response({
-                'message': f'Đã {action_text} nhân viên {user.full_name or user.username} thành công',
+                'message': f'Đã {action_text} {user_type} {user.full_name or user.username} thành công',
                 'user': UserSerializer(user).data,
                 'is_active': user.is_active
             }, status=status.HTTP_200_OK)
@@ -216,6 +219,15 @@ class UserViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
                 {'error': f'Lỗi khi thay đổi trạng thái: {str(e)}'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    @action(detail=False, methods=['get'])
+    def customers_list(self, request):
+        """
+        Admin/Owner xem danh sách customers
+        """
+        customer_users = User.objects.filter(role='customer')
+        serializer = UserSerializer(customer_users, many=True)
+        return Response(serializer.data)
 
 class RoomTypeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView,generics.DestroyAPIView):
     """

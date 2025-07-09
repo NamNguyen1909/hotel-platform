@@ -54,7 +54,7 @@ import Payments from './pages/Payments';
 // import Notifications from './pages/Notifications';
 
 import RoomsManagement from './pages/RoomsManagement';
-import StaffsManagement from './pages/Staffsmanagement';
+import StaffsManagement from './pages/StaffsManagement';
 
 // Component wrapper để check route và hiển thị header
 const AppContent = () => {

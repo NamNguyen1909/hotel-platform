@@ -232,11 +232,11 @@ class IsStaffOrReadOnly(permissions.BasePermission):
 
 class CanManageUsers(permissions.BasePermission):
     """
-    Quyền quản lý user: chỉ Admin
+    Quyền quản lý user: Admin, Owner
     """
     def has_permission(self, request, view):
         return (request.user and request.user.is_authenticated and 
-                request.user.role == 'admin')
+                request.user.role in ['admin', 'owner'])
 
 
 class CanUpdateProfile(permissions.BasePermission):
@@ -248,7 +248,7 @@ class CanUpdateProfile(permissions.BasePermission):
     
     def has_object_permission(self, request, view, obj):
         # Admin có thể cập nhật profile của mọi user
-        if request.user.role == 'admin':
+        if request.user.role in ['admin', 'owner']:
             return True
         # User chỉ có thể cập nhật profile của mình
         return obj == request.user
