@@ -39,7 +39,7 @@ from .permissions import (
     IsBookingOwner, IsRoomRentalOwner, IsPaymentOwner, IsNotificationOwner, CanManageRooms,
     CanManageBookings, CanManagePayments, CanCreateDiscountCode, CanViewStats, CanCheckIn,
     CanCheckOut, CanConfirmBooking, CanGenerateQRCode, CanUpdateProfile, CanCancelBooking,
-    CanCreateNotification, CanModifyRoomType, CanManageUsers
+    CanCreateNotification, CanModifyRoomType, CanManageUsers, CanManageStaff
 )
 
 # Create your views here.
@@ -71,8 +71,8 @@ class UserViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
             return [AllowAny()]
         elif self.action in ['list', 'vip_customers']:
             return [CanManageUsers()]
-        elif self.action in ['create_staff', 'staff_list']:
-            return [IsOwnerUser()]
+        elif self.action in ['create_staff', 'staff_list', 'toggle_active_staff']:
+            return [CanManageStaff()]
         elif self.action in ['update', 'partial_update', 'destroy']:
             return [CanUpdateProfile()]
         return [IsAuthenticated()]
@@ -110,7 +110,7 @@ class UserViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
     @action(detail=False, methods=['post'])
     def create_staff(self, request):
         """
-        Owner tạo staff account
+        Owner,admin tạo staff account
         """
         data = request.data.copy()
         data['role'] = 'staff'
@@ -170,6 +170,52 @@ class UserViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
             'customers': serializer.data
         })
 
+    @action(detail=True, methods=['post'])
+    def toggle_active_staff(self, request, pk=None):
+        """
+        Kích hoạt/vô hiệu hóa nhân viên (chỉ dành cho Admin và Owner)
+        """
+        # Kiểm tra quyền
+        if not (request.user.role in ['admin', 'owner']):
+            return Response(
+                {'error': 'Bạn không có quyền thực hiện thao tác này'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            user = get_object_or_404(User, pk=pk)
+            
+            # Chỉ cho phép toggle active cho staff
+            if user.role != 'staff':
+                return Response(
+                    {'error': 'Chỉ có thể thay đổi trạng thái nhân viên'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Không cho phép owner tự vô hiệu hóa chính mình
+            if user == request.user:
+                return Response(
+                    {'error': 'Không thể thay đổi trạng thái của chính mình'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Toggle active status
+            user.is_active = not user.is_active
+            user.save()
+            
+            action_text = 'kích hoạt' if user.is_active else 'vô hiệu hóa'
+            
+            return Response({
+                'message': f'Đã {action_text} nhân viên {user.full_name or user.username} thành công',
+                'user': UserSerializer(user).data,
+                'is_active': user.is_active
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Lỗi khi thay đổi trạng thái: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class RoomTypeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView,generics.DestroyAPIView):
     """

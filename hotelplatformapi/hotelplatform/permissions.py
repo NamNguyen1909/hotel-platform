@@ -316,6 +316,15 @@ class CanAccessAllPayments(permissions.BasePermission):
                 request.user.role in ['admin', 'owner', 'staff'])
 
 
+class CanManageStaff(permissions.BasePermission):
+    """
+    Quyền quản lý nhân viên: Admin, Owner
+    """
+    def has_permission(self, request, view):
+        return (request.user and request.user.is_authenticated and 
+                request.user.role in ['admin', 'owner'])
+
+
 # Định nghĩa mapping role permissions cho dễ sử dụng
 ROLE_PERMISSIONS = {
     'admin': [

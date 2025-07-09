@@ -57,7 +57,7 @@ const menuItemsByRole = {
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
     { text: 'Quản lý phòng', icon: <Hotel />, path: '/rooms-management' },
     { text: 'Quản lý khách hàng', icon: <People />, path: '/customers' },
-    { text: 'Quản lý nhân viên', icon: <AdminPanelSettings />, path: '/staff' },
+    { text: 'Quản lý nhân viên', icon: <AdminPanelSettings />, path: '/staffs-management' },
   ],
   staff: [
     { text: 'Phòng', icon: <Hotel />, path: '/rooms' },
