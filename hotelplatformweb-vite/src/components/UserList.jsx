@@ -294,15 +294,47 @@ const UserList = ({
   return (
     <Box sx={{ p: 3, maxWidth: 1200, mx: 'auto' }}>
       {/* Header */}
-      <Card sx={{ mb: 3, background: 'linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)', color: 'white' }}>
+      <Card sx={{ 
+        mb: 3, 
+        background: (theme) => userType === 'staff' 
+          ? `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`
+          : `linear-gradient(135deg, ${theme.palette.secondary.main} 0%, ${theme.palette.secondary.dark} 100%)`,
+        color: 'white',
+        boxShadow: (theme) => userType === 'staff' 
+          ? `0 8px 32px ${theme.palette.primary.main}30`
+          : `0 8px 32px ${theme.palette.secondary.main}30`
+      }}>
         <CardContent>
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} md={8}>
-              <Typography variant="h4" sx={{ fontWeight: 'bold', mb: 1 }}>
-                {icon && React.cloneElement(icon, { sx: { mr: 2, verticalAlign: 'middle' } })}
+              <Typography 
+                variant="h4" 
+                sx={{ 
+                  fontWeight: 'bold', 
+                  mb: 1, 
+                  textShadow: '0 2px 4px rgba(0,0,0,0.4)',
+                  color: userType === 'staff' ? '#E8F5E8' : '#FFF8DC',
+                  letterSpacing: '-0.5px'
+                }}
+              >
+                {icon && React.cloneElement(icon, { 
+                  sx: { 
+                    mr: 2, 
+                    verticalAlign: 'middle', 
+                    fontSize: 40,
+                    filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+                  } 
+                })}
                 {title}
               </Typography>
-              <Typography variant="body1" sx={{ opacity: 0.9 }}>
+              <Typography 
+                variant="body1" 
+                sx={{ 
+                  opacity: 0.95,
+                  color: userType === 'staff' ? '#F0F8F0' : '#FFFEF7',
+                  textShadow: '0 1px 2px rgba(0,0,0,0.3)'
+                }}
+              >
                 {description}
               </Typography>
             </Grid>
@@ -312,10 +344,17 @@ const UserList = ({
                 startIcon={<AddIcon />}
                 onClick={handleAdd}
                 sx={{
-                  backgroundColor: 'rgba(255,255,255,0.2)',
-                  '&:hover': { backgroundColor: 'rgba(255,255,255,0.3)' },
-                  color: 'white',
-                  fontWeight: 'bold'
+                  backgroundColor: 'rgba(255,255,255,0.95)',
+                  color: userType === 'staff' ? 'success.main' : 'secondary.main',
+                  fontWeight: 'bold',
+                  border: '2px solid rgba(255,255,255,0.8)',
+                  '&:hover': { 
+                    backgroundColor: 'white',
+                    color: userType === 'staff' ? 'success.dark' : 'secondary.dark',
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 6px 20px rgba(0,0,0,0.2)'
+                  },
+                  transition: 'all 0.3s ease'
                 }}
               >
                 Thêm {userType === 'staff' ? 'nhân viên' : 'khách hàng'}
