@@ -358,9 +358,9 @@ class HotelAdminSite(admin.AdminSite):
         # Thống kê khách hàng theo loại
         customer_type_stats = User.objects.filter(role='customer').values('customer_type').annotate(
             count=Count('id'),
-            total_bookings=Sum('total_bookings'),
-            total_spent=Sum('total_spent')
-        ).order_by('-total_spent')
+            total_bookings_sum=Sum('total_bookings'),
+            total_spent_sum=Sum('total_spent')
+        ).order_by('-total_spent_sum')
         
         # Thống kê doanh thu
         total_revenue = Payment.objects.filter(status=True).aggregate(

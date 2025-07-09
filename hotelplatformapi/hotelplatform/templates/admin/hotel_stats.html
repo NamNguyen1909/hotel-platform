@@ -81,8 +81,8 @@
                         {% endif %}
                     </td>
                     <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{{ customer_type.count }}</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{{ customer_type.total_bookings|default:"0" }}</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{{ customer_type.total_spent|floatformat:0|default:"0" }} VNĐ</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{{ customer_type.total_bookings_sum|default:"0" }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{{ customer_type.total_spent_sum|floatformat:0|default:"0" }} VNĐ</td>
                 </tr>
                 {% endfor %}
             </tbody>

@@ -74,15 +74,15 @@ class Command(BaseCommand):
                 # Set some customers as VIP/Super VIP for testing
                 if i < 3:
                     customer.total_bookings = random.randint(20, 30)
-                    customer.total_spent = Decimal(random.randint(5000, 10000))
+                    customer.total_spent = Decimal(random.randint(50000000, 100000000))  # 50-100 triệu VND
                     customer.customer_type = 'super_vip'
                 elif i < 8:
                     customer.total_bookings = random.randint(10, 19)
-                    customer.total_spent = Decimal(random.randint(2000, 4999))
+                    customer.total_spent = Decimal(random.randint(20000000, 49999999))  # 20-50 triệu VND
                     customer.customer_type = 'vip'
                 elif i < 15:
                     customer.total_bookings = random.randint(3, 9)
-                    customer.total_spent = Decimal(random.randint(500, 1999))
+                    customer.total_spent = Decimal(random.randint(5000000, 19999999))  # 5-20 triệu VND
                     customer.customer_type = 'regular'
                 customer.save()
 

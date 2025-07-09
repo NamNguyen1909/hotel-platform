@@ -14,3 +14,8 @@ npm run dev
 ```
 
 Django RESTful API cho backend (BE) và ReactJS với Material UI (dùng Vite, biến thể JavaScript + SWC) cho frontend (FE)
+
+### faker data
+```
+python manage.py seed      
+```
