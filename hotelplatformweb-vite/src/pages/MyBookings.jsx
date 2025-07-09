@@ -1,17 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import {
   Container,
-  Grid,
-  Card,
-  CardContent,
   Typography,
-  CircularProgress,
   Box,
-  Button,
+  CircularProgress,
   Alert,
+  List,
+  ListItem,
+  ListItemAvatar,
+  Avatar,
+  ListItemText,
+  ListItemSecondaryAction,
+  Button,
+  Chip,
+  Divider,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/apis';
+
+const statusColors = {
+  pending: 'warning',
+  confirmed: 'success',
+  checked_in: 'info',
+  checked_out: 'default',
+  cancelled: 'error',
+};
+
+const statusLabels = {
+  pending: 'Chờ xác nhận',
+  confirmed: 'Đã xác nhận',
+  checked_in: 'Đã nhận phòng',
+  checked_out: 'Đã trả phòng',
+  cancelled: 'Đã hủy',
+};
 
 const MyBookings = () => {
   const [bookings, setBookings] = useState([]);
@@ -38,88 +59,68 @@ const MyBookings = () => {
   }, []);
 
   return (
-    <Box sx={{ flexGrow: 1, bgcolor: 'background.default', minHeight: '100vh' }}>
-      <Container sx={{ mt: 4, mb: 4 }}>
-        <Typography
-          variant="h4"
-          gutterBottom
-          sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 700 }}
-        >
-          Đặt Phòng Của Tôi
-        </Typography>
+    <Container maxWidth="md" sx={{ mt: 4, mb: 4 }}>
+      <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold', color: '#8B4513' }}>
+        Đặt Phòng Của Tôi
+      </Typography>
 
-        {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-            <CircularProgress sx={{ color: '#DAA520' }} />
-          </Box>
-        ) : error ? (
-          <Alert severity="error" sx={{ mt: 2 }}>
-            {error}
-          </Alert>
-        ) : !Array.isArray(bookings) || bookings.length === 0 ? (
-          <Alert severity="info" sx={{ mt: 2 }}>
-            Bạn chưa có đặt phòng nào.
-          </Alert>
-        ) : (
-          <Grid container spacing={3}>
-            {bookings.map((booking) => (
-              <Grid item xs={12} sm={6} md={4} key={booking.id}>
-                <Card
-                  sx={{
-                    borderRadius: 2,
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                    '&:hover': {
-                      boxShadow: '0 6px 16px rgba(0,0,0,0.2)',
-                      transform: 'translateY(-4px)',
-                      transition: 'all 0.3s ease',
-                    },
-                  }}
-                >
-                  <CardContent>
-                    <Typography
-                      gutterBottom
-                      variant="h5"
-                      component="div"
-                      sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 600 }}
-                    >
-                      Đặt phòng #{booking.id}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'Inter' }}>
-                      Từ: {new Date(booking.check_in_date).toLocaleDateString('vi-VN')}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'Inter' }}>
-                      Đến: {new Date(booking.check_out_date).toLocaleDateString('vi-VN')}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'Inter' }}>
-                      Trạng thái: {booking.status === 'pending' ? 'Chờ xác nhận' :
-                        booking.status === 'confirmed' ? 'Đã xác nhận' :
-                        booking.status === 'checked_in' ? 'Đã nhận phòng' :
-                        booking.status === 'checked_out' ? 'Đã trả phòng' :
-                        booking.status === 'cancelled' ? 'Đã hủy' : 'Không xác định'}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'Inter' }}>
-                      Tổng tiền: {parseFloat(booking.total_price).toLocaleString('vi-VN')} VND
-                    </Typography>
-                    <Button
-                      variant="contained"
-                      sx={{
-                        mt: 2,
-                        bgcolor: '#DAA520',
-                        '&:hover': { bgcolor: '#B8860B' },
-                        fontFamily: 'Inter',
-                      }}
-                      onClick={() => navigate(`/booking/${booking.id}`)}
-                    >
-                      Xem Chi Tiết
-                    </Button>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))}
-          </Grid>
-        )}
-      </Container>
-    </Box>
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
+          <CircularProgress sx={{ color: '#DAA520' }} />
+        </Box>
+      ) : error ? (
+        <Alert severity="error">{error}</Alert>
+      ) : bookings.length === 0 ? (
+        <Alert severity="info">Bạn chưa có đặt phòng nào.</Alert>
+      ) : (
+        <List sx={{ bgcolor: 'background.paper', borderRadius: 2, boxShadow: 3 }}>
+          {bookings.map((booking) => (
+            <React.Fragment key={booking.id}>
+              <ListItem alignItems="flex-start">
+                <ListItemAvatar>
+                  <Avatar sx={{ bgcolor: '#DAA520' }}>
+                    {booking.id}
+                  </Avatar>
+                </ListItemAvatar>
+                <ListItemText
+                  primary={`Đặt phòng #${booking.id}`}
+                  secondary={
+                    <>
+                      <Typography component="span" variant="body2" color="text.primary">
+                        Từ: {new Date(booking.check_in_date).toLocaleDateString('vi-VN')}
+                      </Typography>
+                      <br />
+                      <Typography component="span" variant="body2" color="text.primary">
+                        Đến: {new Date(booking.check_out_date).toLocaleDateString('vi-VN')}
+                      </Typography>
+                      <br />
+                      <Typography component="span" variant="body2" color="text.primary">
+                        Tổng tiền: {parseFloat(booking.total_price).toLocaleString('vi-VN')} VND
+                      </Typography>
+                    </>
+                  }
+                />
+                <ListItemSecondaryAction>
+                  <Chip
+                    label={statusLabels[booking.status] || 'Không xác định'}
+                    color={statusColors[booking.status] || 'default'}
+                    sx={{ mr: 2, fontWeight: 'bold' }}
+                  />
+                  <Button
+                    variant="contained"
+                    sx={{ bgcolor: '#DAA520', '&:hover': { bgcolor: '#B8860B' } }}
+                    onClick={() => navigate(`/booking/${booking.id}`)}
+                  >
+                    Xem Chi Tiết
+                  </Button>
+                </ListItemSecondaryAction>
+              </ListItem>
+              <Divider component="li" />
+            </React.Fragment>
+          ))}
+        </List>
+      )}
+    </Container>
   );
 };
 
