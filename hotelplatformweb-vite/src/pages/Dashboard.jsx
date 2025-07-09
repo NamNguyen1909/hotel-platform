@@ -37,6 +37,13 @@ const Dashboard = () => {
       path: '/staffs-management'
     },
     {
+      title: 'Quản Lý Khách Hàng',
+      description: 'Quản lý thông tin và tài khoản khách hàng',
+      icon: <PeopleIcon />,
+      color: 'secondary.main',
+      path: '/customers-management'
+    },
+    {
       title: 'Thống Kê',
       description: 'Xem báo cáo doanh thu và thống kê hoạt động',
       icon: <AnalyticsIcon />,
@@ -64,7 +71,7 @@ const Dashboard = () => {
 
         <Grid container spacing={3}>
           {managementCards.map((card, index) => (
-            <Grid item xs={12} sm={6} md={3} key={index}>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }} key={index}>
               <Card 
                 sx={{ 
                   height: '100%',

@@ -109,7 +109,7 @@ const Header = () => {
     };
 
     fetchUserInfo();
-  }, [location.pathname]);
+  }, []); // Chỉ gọi 1 lần khi component mount
 
   const handleOpenUserMenu = (event) => {
     setAnchorElUser(event.currentTarget);
