@@ -224,6 +224,8 @@ class Booking(models.Model):
             raise ValidationError("Ngày nhận phòng phải trước ngày trả phòng.")
         if self.check_in_date > timezone.now() + timedelta(days=28):
             raise ValidationError("Ngày nhận phòng không được vượt quá 28 ngày kể từ thời điểm đặt.")
+        if not self.pk:
+            return  # Chưa có id, không kiểm tra rooms
         for room in self.rooms.all():
             if room.status != 'available':
                 raise ValidationError(f"Phòng {room.room_number} không khả dụng.")
@@ -363,11 +365,12 @@ class RoomRental(models.Model):
         return f"Phiếu thuê của {self.customer} từ {self.check_in_date} đến {self.check_out_date}"
 
     def clean(self):
+        if self.check_in_date is None or self.check_out_date is None:
+            return  # Không kiểm tra nếu thiếu dữ liệu ngày
         if self.check_in_date >= self.check_out_date:
             raise ValidationError("Ngày nhận phòng phải trước ngày trả phòng.")
         for room in self.rooms.all():
             if self.guest_count > room.room_type.max_guests:
-
                 raise ValidationError(f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách.")
 
     def save(self, *args, **kwargs):

@@ -39,7 +39,7 @@ from .permissions import (
     IsBookingOwner, IsRoomRentalOwner, IsPaymentOwner, IsNotificationOwner, CanManageRooms,
     CanManageBookings, CanManagePayments, CanCreateDiscountCode, CanViewStats, CanCheckIn,
     CanCheckOut, CanConfirmBooking, CanGenerateQRCode, CanUpdateProfile, CanCancelBooking,
-    CanCreateNotification, CanModifyRoomType, CanManageUsers, CanManageStaff
+    CanCreateNotification, CanModifyRoomType, CanManageCustomers, CanManageStaff
 )
 
 # Create your views here.
@@ -70,11 +70,11 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
         if self.action == 'create':
             return [AllowAny()]
         elif self.action in ['list', 'vip_customers']:
-            return [CanManageUsers()]
+            return [CanManageCustomers()]
         elif self.action in ['create_staff', 'staff_list']:
             return [CanManageStaff()]
         elif self.action in ['customers_list', 'toggle_active']:
-            return [CanManageUsers()]
+            return [CanManageCustomers()]
         elif self.action in ['update', 'partial_update']:
             return [CanUpdateProfile()]
         return [IsAuthenticated()]
@@ -223,7 +223,7 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
     @action(detail=False, methods=['get'])
     def customers_list(self, request):
         """
-        Admin/Owner xem danh sách customers
+        Admin/Owner/staff xem danh sách customers
         """
         customer_users = User.objects.filter(role='customer')
         serializer = UserSerializer(customer_users, many=True)

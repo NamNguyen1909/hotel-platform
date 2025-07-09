@@ -230,13 +230,13 @@ class IsStaffOrReadOnly(permissions.BasePermission):
                 request.user.role in ['admin', 'owner', 'staff'])
 
 
-class CanManageUsers(permissions.BasePermission):
+class CanManageCustomers(permissions.BasePermission):
     """
     Quyền quản lý user: Admin, Owner
     """
     def has_permission(self, request, view):
         return (request.user and request.user.is_authenticated and 
-                request.user.role in ['admin', 'owner'])
+                request.user.role in ['admin', 'owner', 'staff'])
 
 
 class CanUpdateProfile(permissions.BasePermission):

@@ -62,7 +62,7 @@ const menuItemsByRole = {
   ],
   staff: [
     { text: 'Phòng', icon: <Hotel />, path: '/rooms' },
-    { text: 'Khách hàng', icon: <People />, path: '/customers' },
+    { text: 'Khách hàng', icon: <People />, path: '/customers-management' },
     { text: 'Đặt phòng', icon: <Book />, path: '/staff/bookings' },
     { text: 'Hóa đơn', icon: <Receipt />, path: '/staff/invoices' },
   ],
