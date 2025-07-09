@@ -12,13 +12,11 @@ import Profile from './pages/Profile';
 import Rooms from './pages/Rooms';
 import MyBookings from './pages/MyBookings';
 import Payments from './pages/Payments';
-// import RoomDetail from './pages/RoomDetail';
-// import BookingDetail from './pages/BookingDetail';
-// import Notifications from './pages/Notifications';
-
 import RoomsManagement from './pages/RoomsManagement';
 import StaffsManagement from './pages/StaffsManagement';
 import CustomersManagement from './pages/CustomersManagement';
+import Bookings from './pages/Bookings';
+import Invoices from './pages/Invoices';
 
 // Component wrapper để check route và hiển thị header
 const AppContent = () => {
@@ -38,14 +36,13 @@ const AppContent = () => {
         <Route path="/payments" element={<Payments />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        {/* <Route path="/room/:id" element={<RoomDetail />} />
-        <Route path="/booking/:id" element={<BookingDetail />} />
-        <Route path="/notifications" element={<Notifications />} /> */}
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path='/profile' element={<Profile />} />
         <Route path="/rooms-management" element={<RoomsManagement />} />
         <Route path="/staffs-management" element={<StaffsManagement />} />
         <Route path="/customers-management" element={<CustomersManagement />} />
+        <Route path="/staff/bookings" element={<Bookings />} />
+        <Route path="/staff/invoices" element={<Invoices />} />
         {/* Thêm các route khác nếu cần */}
       </Routes>
     </>

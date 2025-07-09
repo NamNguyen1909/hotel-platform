@@ -462,6 +462,8 @@ class Payment(models.Model):
     paid_at = models.DateTimeField(null=True, blank=True) # Ngày giờ thanh toán, viết hàm tự động cập nhật khi status=True
     transaction_id = models.CharField(max_length=255, unique=True)
     discount_code = models.ForeignKey('DiscountCode', on_delete=models.SET_NULL, null=True, blank=True, related_name='payments')
+    created_at = models.DateTimeField(auto_now_add=True)
+
 
     class Meta:
         indexes = [

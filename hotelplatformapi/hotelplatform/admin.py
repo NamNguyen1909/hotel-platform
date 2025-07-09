@@ -168,6 +168,8 @@ class BookingAdmin(admin.ModelAdmin):
     qr_code_view.short_description = "QR Code"
 
     def total_price_display(self, obj):
+        if obj.total_price is None:
+            return "Chưa có giá"
         return f"{obj.total_price:,.0f} VNĐ"
     total_price_display.short_description = "Tổng giá"
 
