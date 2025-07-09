@@ -2,13 +2,46 @@ from datetime import timedelta
 from rest_framework import serializers
 from rest_framework.serializers import ModelSerializer
 from .models import (
-    User, RoomType, Room, Booking, RoomRental, Payment, DiscountCode, Notification
+    User, RoomType, Room, Booking, RoomRental, Payment, DiscountCode, Notification, RoomImage
 )
 from django.db import transaction
 from django.utils import timezone
 from django.db.models import F
 from decimal import Decimal
 from cloudinary.utils import cloudinary_url
+
+
+# Serializer cho RoomImage
+class RoomImageSerializer(ModelSerializer):
+    image_url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = RoomImage
+        fields = ['id', 'room', 'image', 'image_url', 'caption', 'is_primary', 'created_at']
+        read_only_fields = ['id', 'created_at']
+    
+    def get_image_url(self, obj):
+        """Lấy URL của ảnh từ Cloudinary"""
+        if obj.image:
+            return obj.image.url
+        return None
+    
+    def validate(self, attrs):
+        room = attrs.get('room')
+        is_primary = attrs.get('is_primary', False)
+        
+        # Nếu đánh dấu là ảnh chính và chưa có ảnh nào cho phòng này
+        if is_primary and room:
+            # Kiểm tra xem đã có ảnh chính chưa (trừ ảnh hiện tại nếu đang update)
+            existing_primary = room.images.filter(is_primary=True)
+            if self.instance:
+                existing_primary = existing_primary.exclude(pk=self.instance.pk)
+            
+            if existing_primary.exists() and is_primary:
+                # Có thể cho phép, model sẽ tự động bỏ đánh dấu ảnh chính cũ
+                pass
+        
+        return attrs
 
 
 # Serializer cho RoomType
@@ -25,11 +58,19 @@ class RoomTypeSerializer(ModelSerializer):
 class RoomSerializer(ModelSerializer):
     room_type_name = serializers.ReadOnlyField(source='room_type.name')
     room_type_price = serializers.ReadOnlyField(source='room_type.base_price')
+    primary_image_url = serializers.SerializerMethodField()
+    
+    def get_primary_image_url(self, obj):
+        # Lấy URL ảnh chính của phòng
+        primary_image = obj.get_primary_image()
+        if primary_image and primary_image.image:
+            return primary_image.image.url
+        return None
     
     class Meta:
         model = Room
-        fields = ['id', 'room_number', 'room_type', 'room_type_name', 'room_type_price', 'status', 'created_at', 'updated_at']
-        read_only_fields = ['created_at', 'updated_at']
+        fields = ['id', 'room_number', 'room_type', 'room_type_name', 'room_type_price', 'status', 'primary_image_url', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at', 'primary_image_url']
     
     def validate_status(self, value):
         valid_statuses = [status[0] for status in Room.ROOM_STATUS]
@@ -437,6 +478,8 @@ class RoomDetailSerializer(ModelSerializer):
     room_type = RoomTypeSerializer(read_only=True)
     current_bookings = serializers.SerializerMethodField()
     current_rentals = serializers.SerializerMethodField()
+    images = serializers.SerializerMethodField()
+    primary_image = serializers.SerializerMethodField()
 
     def get_current_bookings(self, obj):
         # Lấy các booking hiện tại (chưa check-out)
@@ -452,10 +495,22 @@ class RoomDetailSerializer(ModelSerializer):
         ).select_related('customer').prefetch_related('rooms')
         return RoomRentalSerializer(current_rentals, many=True, context=self.context).data
 
+    def get_images(self, obj):
+        # Lấy tất cả ảnh của phòng, sắp xếp theo ảnh chính trước
+        images = obj.images.all().order_by('-is_primary', '-created_at')
+        return RoomImageSerializer(images, many=True, context=self.context).data
+
+    def get_primary_image(self, obj):
+        # Lấy ảnh chính của phòng
+        primary_image = obj.get_primary_image()
+        if primary_image:
+            return RoomImageSerializer(primary_image, context=self.context).data
+        return None
+
     class Meta:
         model = Room
         fields = [
             'id', 'room_number', 'room_type', 'status', 'created_at', 'updated_at',
-            'current_bookings', 'current_rentals'
+            'current_bookings', 'current_rentals', 'images', 'primary_image'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'current_bookings', 'current_rentals']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'current_bookings', 'current_rentals', 'images', 'primary_image']

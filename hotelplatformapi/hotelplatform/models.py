@@ -145,6 +145,46 @@ class Room(models.Model):
     def __str__(self):
         return f"Phòng {self.room_number} ({self.room_type.name})"
 
+    def get_primary_image(self):
+        """Lấy ảnh chính của phòng"""
+        primary_image = self.images.filter(is_primary=True).first()
+        if primary_image:
+            return primary_image.image
+        # Nếu không có ảnh chính, lấy ảnh đầu tiên
+        first_image = self.images.first()
+        return first_image.image if first_image else None
+
+    def get_all_images(self):
+        """Lấy tất cả ảnh của phòng"""
+        return self.images.all()
+
+    def get_image_urls(self):
+        """Lấy danh sách URL của tất cả ảnh"""
+        return [img.image.url for img in self.images.all() if img.image]
+
+# Ảnh phòng
+class RoomImage(models.Model):
+    room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='images')
+    image = CloudinaryField('room_image', blank=True, null=True)
+    caption = models.CharField(max_length=255, blank=True, null=True)  # Mô tả ảnh
+    is_primary = models.BooleanField(default=False)  # Ảnh chính
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['room', 'is_primary']),
+        ]
+        ordering = ['-is_primary', 'created_at']
+
+    def __str__(self):
+        return f"Ảnh phòng {self.room.room_number} - {self.caption or 'Không có mô tả'}"
+
+    def save(self, *args, **kwargs):
+        # Nếu đây là ảnh chính, bỏ đánh dấu ảnh chính cũ
+        if self.is_primary:
+            RoomImage.objects.filter(room=self.room, is_primary=True).exclude(pk=self.pk).update(is_primary=False)
+        super().save(*args, **kwargs)
+
 # Đặt phòng
 class Booking(models.Model):
     customer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bookings', limit_choices_to={'role': 'customer'})

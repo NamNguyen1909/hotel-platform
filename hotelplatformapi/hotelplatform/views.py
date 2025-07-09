@@ -26,13 +26,13 @@ from django.shortcuts import get_object_or_404
 
 # Local imports
 from .models import (
-    User, RoomType, Room, Booking, RoomRental, Payment, DiscountCode, Notification,
+    User, RoomType, Room, RoomImage, Booking, RoomRental, Payment, DiscountCode, Notification,
     BookingStatus, CustomerType
 )
 from .serializers import (
     UserSerializer, UserDetailSerializer, RoomTypeSerializer, RoomSerializer, RoomDetailSerializer,
     BookingSerializer, BookingDetailSerializer, RoomRentalSerializer, RoomRentalDetailSerializer,
-    PaymentSerializer, DiscountCodeSerializer, NotificationSerializer
+    PaymentSerializer, DiscountCodeSerializer, NotificationSerializer, RoomImageSerializer
 )
 from .permissions import (
     IsAdminUser, IsOwnerUser, IsStaffUser, IsCustomerUser, IsAdminOrOwner, IsAdminOrOwnerOrStaff,
@@ -986,3 +986,110 @@ def vnpay_redirect(request):
         # Nếu không phải từ app, trả về deeplink hoặc giao diện web
         deeplink = f"bemmobile://payment-result?vnp_ResponseCode={vnp_ResponseCode}&message={urllib.parse.quote(message)}"
         return redirect(deeplink)
+
+
+class RoomImageViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView, generics.DestroyAPIView):
+    """
+    ViewSet quản lý RoomImage
+    """
+    queryset = RoomImage.objects.all()
+    serializer_class = RoomImageSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ['caption', 'room__room_number']
+    ordering_fields = ['created_at', 'is_primary']
+    ordering = ['-is_primary', '-created_at']
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'set_primary']:
+            return [CanManageRooms()]
+        return [IsAuthenticated()]
+
+    def get_queryset(self):
+        queryset = RoomImage.objects.select_related('room').all()
+
+        # Filter by room
+        room_id = self.request.query_params.get('room')
+        if room_id:
+            queryset = queryset.filter(room__id=room_id)
+
+        # Filter by primary status
+        is_primary = self.request.query_params.get('is_primary')
+        if is_primary is not None:
+            is_primary_bool = is_primary.lower() in ['true', '1']
+            queryset = queryset.filter(is_primary=is_primary_bool)
+
+        return queryset
+
+    def create(self, request):
+        """
+        Tạo room image mới
+        """
+        serializer = RoomImageSerializer(data=request.data)
+        if serializer.is_valid():
+            room_image = serializer.save()
+            return Response(
+                RoomImageSerializer(room_image).data,
+                status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def update(self, request, pk=None):
+        """
+        Cập nhật room image
+        """
+        room_image = get_object_or_404(RoomImage, pk=pk)
+        serializer = RoomImageSerializer(room_image, data=request.data, partial=True)
+        if serializer.is_valid():
+            room_image = serializer.save()
+            return Response(RoomImageSerializer(room_image).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def set_primary(self, request, pk=None):
+        """
+        Đặt ảnh này làm ảnh chính cho phòng
+        """
+        room_image = get_object_or_404(RoomImage, pk=pk)
+        
+        # Bỏ primary cho tất cả ảnh khác của phòng này
+        RoomImage.objects.filter(room=room_image.room).update(is_primary=False)
+        
+        # Đặt ảnh này làm primary
+        room_image.is_primary = True
+        room_image.save()
+        
+        return Response({
+            'message': f'Đã đặt ảnh "{room_image.caption or "Không có tiêu đề"}" làm ảnh chính',
+            'room_image': RoomImageSerializer(room_image).data
+        })
+
+    @action(detail=False, methods=['get'])
+    def by_room(self, request):
+        """
+        Lấy tất cả ảnh của một phòng cụ thể
+        """
+        room_id = request.query_params.get('room_id')
+        if not room_id:
+            return Response(
+                {"error": "Vui lòng cung cấp room_id"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            room = get_object_or_404(Room, pk=room_id)
+            room_images = RoomImage.objects.filter(room=room).order_by('-is_primary', '-created_at')
+            serializer = RoomImageSerializer(room_images, many=True)
+            return Response({
+                'room': {
+                    'id': room.id,
+                    'room_number': room.room_number,
+                    'room_type': room.room_type.name
+                },
+                'images': serializer.data
+            })
+        except Room.DoesNotExist:
+            return Response(
+                {"error": "Phòng không tồn tại"},
+                status=status.HTTP_404_NOT_FOUND
+            )
