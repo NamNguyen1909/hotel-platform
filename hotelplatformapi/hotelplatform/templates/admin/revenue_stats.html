@@ -85,7 +85,7 @@
                     <td style="padding: 10px; border: 1px solid #ddd;">{{ customer.email }}</td>
                     <td style="padding: 10px; border: 1px solid #ddd;">{{ customer.phone|default:"Chưa có" }}</td>
                     <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">
-                        <strong style="color: #dc3545;">{{ customer.total_spent|floatformat:0 }}</strong>
+                        <strong style="color: #dc3545;">{{ customer.actual_spent|floatformat:0 }}</strong>
                     </td>
                 </tr>
                 {% empty %}

@@ -100,16 +100,16 @@ class User(AbstractBaseUser, PermissionsMixin):
         self.total_spent = total_spent
         
         # Cập nhật customer_type dựa trên tiêu chí
-        if bookings_count >= 20 or total_spent >= 5000:
+        if bookings_count >= 20 or total_spent >= 50000000:  # 50 triệu VND
             self.customer_type = CustomerType.SUPER_VIP
-        elif bookings_count >= 10 or total_spent >= 2000:
+        elif bookings_count >= 10 or total_spent >= 20000000:  # 20 triệu VND
             self.customer_type = CustomerType.VIP
         elif bookings_count >= 3:
             self.customer_type = CustomerType.REGULAR
         else:
             self.customer_type = CustomerType.NEW
         
-        self.save()
+        self.save(update_fields=['total_bookings', 'total_spent', 'customer_type'])
 
 # Loại phòng
 class RoomType(models.Model):
@@ -241,8 +241,7 @@ class Booking(models.Model):
         for room in self.rooms.all():
             room.status = 'booked'
             room.save()
-
-        self.customer.update_customer_type()
+        # Note: Customer stats sẽ được cập nhật qua signals
 
     def generate_qr_code(self):
         """
@@ -380,9 +379,7 @@ class RoomRental(models.Model):
         for room in self.rooms.all():
             room.status = 'occupied'
             room.save()
-        if self.customer:
-
-            self.customer.update_customer_type()
+        # Note: Customer stats sẽ được cập nhật qua signals
 
     def check_out(self, actual_check_out_date=None):
         """
@@ -485,10 +482,7 @@ class Payment(models.Model):
             self.paid_at = timezone.now()
         
         super().save(*args, **kwargs)
-        
-        # Cập nhật customer type sau khi thanh toán
-        if self.customer:
-            self.customer.update_customer_type()
+        # Note: Customer stats sẽ được cập nhật qua signals
 
     def __str__(self):
         return f"Thanh toán {self.transaction_id} - {self.amount}"

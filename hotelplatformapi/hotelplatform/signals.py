@@ -1,8 +1,8 @@
-from django.db.models.signals import post_save, pre_save, post_migrate
+from django.db.models.signals import post_save, pre_save, post_migrate, m2m_changed
 from django.dispatch import receiver
 from django.contrib.auth import get_user_model
 from django.apps import apps
-from .models import Booking, BookingStatus, Notification
+from .models import Booking, BookingStatus, Notification, RoomRental, Payment
 
 User = get_user_model()
 
@@ -82,3 +82,41 @@ def booking_pre_save(sender, instance, **kwargs):
                 )
         except Booking.DoesNotExist:
             pass
+
+
+@receiver(m2m_changed, sender=Booking.rooms.through)
+def booking_rooms_changed(sender, instance, action, **kwargs):
+    """
+    Signal xử lý khi rooms của booking thay đổi
+    """
+    if action == "post_add":
+        # Sau khi thêm rooms vào booking, cập nhật customer stats
+        if instance.customer and instance.customer.role == 'customer':
+            instance.customer.update_customer_type()
+
+
+@receiver(post_save, sender=RoomRental)
+def room_rental_post_save(sender, instance, created, **kwargs):
+    """
+    Signal xử lý sau khi RoomRental được lưu
+    """
+    if instance.customer and instance.customer.role == 'customer':
+        instance.customer.update_customer_type()
+
+
+@receiver(post_save, sender=Payment)  
+def payment_post_save(sender, instance, created, **kwargs):
+    """
+    Signal xử lý sau khi Payment được lưu
+    """
+    if instance.customer and instance.customer.role == 'customer':
+        instance.customer.update_customer_type()
+        
+    # Tạo thông báo khi thanh toán thành công
+    if created and instance.status:
+        Notification.objects.create(
+            user=instance.customer,
+            notification_type='booking_confirmation',
+            title='Thanh toán thành công',
+            message=f'Thanh toán {instance.transaction_id} đã được xử lý thành công. Số tiền: {instance.amount:,.0f} VND'
+        )

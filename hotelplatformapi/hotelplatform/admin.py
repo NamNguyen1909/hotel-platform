@@ -7,7 +7,7 @@ from django.urls import path
 from django.utils import timezone
 from datetime import datetime, timedelta
 from .models import (
-    User, RoomType, Room, Booking, RoomRental, Payment, DiscountCode, Notification
+    User, RoomType, Room, Booking, RoomRental, Payment, DiscountCode, Notification, CustomerType
 )
 
 # Form tùy chỉnh cho User
@@ -52,10 +52,10 @@ class NotificationForm(forms.ModelForm):
 
 # Admin cho User
 class UserAdmin(admin.ModelAdmin):
-    list_display = ['id', 'username', 'email', 'full_name', 'role', 'phone', 'is_active', 'created_at']
+    list_display = ['id', 'username', 'email', 'full_name', 'role', 'phone', 'customer_type_display', 'total_bookings_display', 'total_spent_display', 'is_active', 'created_at']
     search_fields = ['username', 'email', 'full_name', 'phone', 'id_card']
-    list_filter = ['role', 'is_active', 'created_at']
-    readonly_fields = ['avatar_view', 'created_at', 'updated_at']
+    list_filter = ['role', 'customer_type', 'is_active', 'created_at']
+    readonly_fields = ['avatar_view', 'created_at', 'updated_at', 'total_bookings', 'total_spent', 'customer_type']
     list_per_page = 20
     form = UserForm
     
@@ -82,6 +82,10 @@ class UserAdmin(admin.ModelAdmin):
         }),
         ('Thông tin liên hệ', {
             'fields': ('phone', 'id_card', 'address')
+        }),
+        ('Thông tin khách hàng', {
+            'fields': ('customer_type', 'total_bookings', 'total_spent'),
+            'classes': ('collapse',)
         }),
         ('Hình ảnh', {
             'fields': ('avatar', 'avatar_view')
@@ -112,8 +116,58 @@ class UserAdmin(admin.ModelAdmin):
         return "Không có ảnh đại diện"
     avatar_view.short_description = "Avatar Preview"
 
+    def customer_type_display(self, obj):
+        """Hiển thị loại khách hàng với màu sắc"""
+        if obj.role != 'customer':
+            return '-'
+        
+        colors = {
+            'new': '#6c757d',           # Xám
+            'regular': '#17a2b8',       # Xanh dương
+            'vip': '#ffc107',           # Vàng
+            'super_vip': '#dc3545',     # Đỏ
+        }
+        color = colors.get(obj.customer_type, '#6c757d')
+        type_display = dict(CustomerType.choices).get(obj.customer_type, obj.customer_type)
+        
+        return mark_safe(f'<span style="color: {color}; font-weight: bold;">{type_display}</span>')
+    customer_type_display.short_description = "Loại KH"
+
+    def total_bookings_display(self, obj):
+        """Hiển thị tổng số booking"""
+        if obj.role != 'customer':
+            return '-'
+        return f"{obj.total_bookings} booking"
+    total_bookings_display.short_description = "Tổng booking"
+
+    def total_spent_display(self, obj):
+        """Hiển thị tổng chi tiêu"""
+        if obj.role != 'customer':
+            return '-'
+        if obj.total_spent == 0:
+            return "0 VNĐ"
+        return f"{obj.total_spent:,.0f} VNĐ"
+    total_spent_display.short_description = "Tổng chi tiêu"
+
     def get_queryset(self, request):
         return super().get_queryset(request)
+
+    # Custom actions
+    actions = ['update_customer_stats']
+
+    def update_customer_stats(self, request, queryset):
+        """Action để cập nhật thống kê khách hàng"""
+        updated_count = 0
+        for user in queryset.filter(role='customer'):
+            user.update_customer_type()
+            updated_count += 1
+        
+        self.message_user(
+            request,
+            f"Đã cập nhật thống kê cho {updated_count} khách hàng.",
+            level='INFO'
+        )
+    update_customer_stats.short_description = "Cập nhật thống kê khách hàng"
 
 # Admin cho RoomType
 class RoomTypeAdmin(admin.ModelAdmin):
@@ -301,10 +355,24 @@ class HotelAdminSite(admin.AdminSite):
             created_at__year=today.year
         ).count()
         
+        # Thống kê khách hàng theo loại
+        customer_type_stats = User.objects.filter(role='customer').values('customer_type').annotate(
+            count=Count('id'),
+            total_bookings=Sum('total_bookings'),
+            total_spent=Sum('total_spent')
+        ).order_by('-total_spent')
+        
         # Thống kê doanh thu
         total_revenue = Payment.objects.filter(status=True).aggregate(
             total=Sum('amount')
         )['total'] or 0
+        
+        # Doanh thu tháng này
+        revenue_this_month = Payment.objects.filter(
+            status=True,
+            paid_at__month=today.month,
+            paid_at__year=today.year
+        ).aggregate(total=Sum('amount'))['total'] or 0
         
         # Thống kê theo loại phòng
         room_type_stats = RoomType.objects.annotate(
@@ -326,7 +394,9 @@ class HotelAdminSite(admin.AdminSite):
             'total_bookings': total_bookings,
             'total_customers': total_customers,
             'new_customers_this_month': new_customers_this_month,
+            'customer_type_stats': customer_type_stats,
             'total_revenue': total_revenue,
+            'revenue_this_month': revenue_this_month,
             'room_type_stats': room_type_stats,
             'booking_status_stats': booking_status_stats,
         })
@@ -356,8 +426,8 @@ class HotelAdminSite(admin.AdminSite):
             role='customer',
             rentals__payments__status=True
         ).annotate(
-            total_spent=Sum('rentals__payments__amount')
-        ).order_by('-total_spent')[:10]
+            actual_spent=Sum('rentals__payments__amount')
+        ).order_by('-actual_spent')[:10]
 
         return TemplateResponse(request, 'admin/revenue_stats.html', {
             'monthly_revenue': monthly_revenue,

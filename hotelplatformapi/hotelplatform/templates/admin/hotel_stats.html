@@ -46,7 +46,47 @@
             <h3 style="color: #dc3545; margin: 0 0 10px 0;">Doanh thu</h3>
             <div style="font-size: 24px; font-weight: bold; color: #333;">{{ total_revenue|floatformat:0 }} VNĐ</div>
             <div style="color: #666; font-size: 14px;">Tổng doanh thu</div>
+            <div style="margin-top: 10px;">
+                <div style="color: #28a745;">💰 Tháng này: {{ revenue_this_month|floatformat:0 }} VNĐ</div>
+            </div>
         </div>
+    </div>
+
+    <!-- Thống kê khách hàng theo loại -->
+    <div class="module" style="margin-top: 30px;">
+        <h3>Thống kê Khách hàng theo Loại</h3>
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="background: #f8f9fa;">
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Loại khách hàng</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">Số lượng</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">Tổng booking</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">Tổng chi tiêu</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for customer_type in customer_type_stats %}
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #ddd;">
+                        {% if customer_type.customer_type == 'new' %}
+                            🆕 Khách hàng mới
+                        {% elif customer_type.customer_type == 'regular' %}
+                            👤 Khách phổ thông
+                        {% elif customer_type.customer_type == 'vip' %}
+                            ⭐ Khách VIP
+                        {% elif customer_type.customer_type == 'super_vip' %}
+                            💎 Khách siêu VIP
+                        {% else %}
+                            ❓ Không xác định
+                        {% endif %}
+                    </td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{{ customer_type.count }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{{ customer_type.total_bookings|default:"0" }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{{ customer_type.total_spent|floatformat:0|default:"0" }} VNĐ</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 
     <!-- Thống kê loại phòng -->
