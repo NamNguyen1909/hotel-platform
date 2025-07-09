@@ -23,6 +23,7 @@ class Command(BaseCommand):
         self.create_historical_bookings()  # Tạo dữ liệu lịch sử
         self.create_current_bookings()     # Tạo booking hiện tại
         self.create_notifications()
+        self.update_customer_stats()  # Cập nhật thống kê khách hàng sau khi seed xong
         self.stdout.write(self.style.SUCCESS('Done! Created comprehensive sample data.'))
 
     def create_users(self):
@@ -71,18 +72,8 @@ class Command(BaseCommand):
                     address=fake.address(),
                     id_card=fake.random_number(digits=12, fix_len=True),
                 )
-                # Set some customers as VIP/Super VIP for testing
-                # Chỉ set booking count, để update_customer_type() tự tính total_spent từ payments thật
-                if i < 3:
-                    customer.total_bookings = random.randint(20, 30)
-                    customer.customer_type = 'super_vip'
-                elif i < 8:
-                    customer.total_bookings = random.randint(10, 19)
-                    customer.customer_type = 'vip'
-                elif i < 15:
-                    customer.total_bookings = random.randint(3, 9)
-                    customer.customer_type = 'regular'
-                customer.save()
+                # Không set thủ công total_bookings và customer_type
+                # Để signals tự động cập nhật khi tạo booking/payment
 
     def create_room_types(self):
         types = [
@@ -358,3 +349,11 @@ class Command(BaseCommand):
                     is_read=is_read,
                     read_at=read_at,
                 )
+
+    def update_customer_stats(self):
+        """Cập nhật thống kê cho tất cả customer sau khi seed xong"""
+        self.stdout.write('Updating customer statistics...')
+        customers = UserModel.objects.filter(role='customer')
+        for customer in customers:
+            customer.update_customer_type()
+        self.stdout.write(f'Updated stats for {customers.count()} customers.')

@@ -88,7 +88,7 @@ const UserList = ({
     address: '',
     role: userType,
     is_active: true,
-    customer_type: 'NEW'
+    customer_type: 'new'
   });
   
   // States for alerts
@@ -155,7 +155,7 @@ const UserList = ({
       address: '',
       role: userType,
       is_active: true,
-      customer_type: 'NEW'
+      customer_type: 'new'
     });
   };
 
@@ -177,7 +177,7 @@ const UserList = ({
       address: user.address || '',
       role: user.role || userType,
       is_active: user.is_active !== undefined ? user.is_active : true,
-      customer_type: user.customer_type || 'NEW'
+      customer_type: user.customer_type || 'new'
     });
     setCurrentUser(user);
     setEditMode(true);
@@ -255,14 +255,14 @@ const UserList = ({
 
   const getCustomerTypeChip = (customerType) => {
     const typeColors = {
-      NEW: { color: 'default', label: 'Mới', icon: <PersonIcon /> },
-      REGULAR: { color: 'primary', label: 'Thường xuyên', icon: <PersonIcon /> },
-      VIP: { color: 'warning', label: 'VIP', icon: <StarIcon /> },
-      SUPER_VIP: { color: 'error', label: 'Super VIP', icon: <StarIcon /> },
-      UNKNOWN: { color: 'default', label: 'Không xác định', icon: <PersonIcon /> }
+      'new': { color: 'default', label: 'Mới', icon: <PersonIcon /> },
+      'regular': { color: 'primary', label: 'Thường', icon: <PersonIcon /> },
+      'vip': { color: 'warning', label: 'VIP', icon: <StarIcon /> },
+      'super_vip': { color: 'error', label: 'Super VIP', icon: <StarIcon /> },
+      'unknown': { color: 'default', label: 'Không xác định', icon: <PersonIcon /> }
     };
     
-    const typeInfo = typeColors[customerType] || typeColors.NEW;
+    const typeInfo = typeColors[customerType] || typeColors['new'];
     return (
       <Chip 
         label={typeInfo.label} 
@@ -617,10 +617,10 @@ const UserList = ({
                     onChange={(e) => handleFormChange('customer_type', e.target.value)}
                     label="Loại khách hàng"
                   >
-                    <MenuItem value="NEW">Mới</MenuItem>
-                    <MenuItem value="REGULAR">Thường xuyên</MenuItem>
-                    <MenuItem value="VIP">VIP</MenuItem>
-                    <MenuItem value="SUPER_VIP">Super VIP</MenuItem>
+                    <MenuItem value="new">Mới</MenuItem>
+                    <MenuItem value="regular">Thường</MenuItem>
+                    <MenuItem value="vip">VIP</MenuItem>
+                    <MenuItem value="super_vip">Super VIP</MenuItem>
                   </Select>
                 </FormControl>
               </Grid>

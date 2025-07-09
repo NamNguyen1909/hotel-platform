@@ -30,7 +30,7 @@ from .models import (
     BookingStatus, CustomerType
 )
 from .serializers import (
-    UserSerializer, UserDetailSerializer, RoomTypeSerializer, RoomSerializer, RoomDetailSerializer,
+    UserSerializer, UserDetailSerializer, UserListSerializer, RoomTypeSerializer, RoomSerializer, RoomDetailSerializer,
     BookingSerializer, BookingDetailSerializer, RoomRentalSerializer, RoomRentalDetailSerializer,
     PaymentSerializer, DiscountCodeSerializer, NotificationSerializer, RoomImageSerializer
 )
@@ -130,10 +130,10 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
     @action(detail=False, methods=['get'])
     def staff_list(self, request):
         """
-        Owner xem danh sách staff
+        Owner xem danh sách staff với thông tin đầy đủ
         """
-        staff_users = User.objects.filter(role='staff')
-        serializer = UserSerializer(staff_users, many=True)
+        staff_users = User.objects.filter(role='staff').order_by('-created_at')
+        serializer = UserListSerializer(staff_users, many=True)
         return Response(serializer.data)
 
     @action(detail=False, methods=['get'])
@@ -223,10 +223,10 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
     @action(detail=False, methods=['get'])
     def customers_list(self, request):
         """
-        Admin/Owner/staff xem danh sách customers
+        Admin/Owner/staff xem danh sách customers với thống kê
         """
-        customer_users = User.objects.filter(role='customer')
-        serializer = UserSerializer(customer_users, many=True)
+        customer_users = User.objects.filter(role='customer').order_by('-created_at')
+        serializer = UserListSerializer(customer_users, many=True)
         return Response(serializer.data)
 
 class RoomTypeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView,generics.DestroyAPIView):

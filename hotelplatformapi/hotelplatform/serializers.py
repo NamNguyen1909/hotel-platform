@@ -131,6 +131,26 @@ class UserSerializer(ModelSerializer):
         fields = ['id', 'username', 'email', 'password', 'full_name', 'phone', 'id_card', 'address', 'role', 'avatar', 'is_staff', 'is_active']
         read_only_fields = ['id', 'is_staff', 'is_active']
 
+
+# Serializer cho danh sách User với thống kê
+class UserListSerializer(ModelSerializer):
+    avatar = serializers.ImageField(required=False, allow_null=True)
+
+    class Meta:
+        model = User
+        fields = [
+            'id', 'username', 'email', 'full_name', 'phone', 'id_card', 'address', 'role', 'avatar', 
+            'is_staff', 'is_active', 'total_bookings', 'total_spent', 'customer_type', 'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'is_staff', 'is_active', 'total_bookings', 'total_spent', 'customer_type', 'created_at', 'updated_at'
+        ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['avatar'] = instance.avatar.url if instance.avatar else ''
+        return data
+
     def create(self, validated_data):
         password = validated_data.pop('password')
         avatar = validated_data.pop('avatar', None)
