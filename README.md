@@ -19,3 +19,4 @@ Django RESTful API cho backend (BE) và ReactJS với Material UI (dùng Vite, b
 ```
 python manage.py seed      
 ```
+Lệnh chạy seed.py: .\myvenv\Scripts\python.exe manage.py seed
