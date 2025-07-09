@@ -15,16 +15,10 @@ import Payments from './pages/Payments';
 import RoomsManagement from './pages/RoomsManagement';
 import StaffsManagement from './pages/StaffsManagement';
 import CustomersManagement from './pages/CustomersManagement';
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
 import Bookings from './pages/Bookings';
 import Invoices from './pages/Invoices';
-=======
 import Analytics from './pages/Analytics';
->>>>>>> Stashed changes
-=======
-import Analytics from './pages/Analytics';
->>>>>>> Stashed changes
+
 
 // Component wrapper để check route và hiển thị header
 const AppContent = () => {
@@ -49,16 +43,12 @@ const AppContent = () => {
         <Route path="/rooms-management" element={<RoomsManagement />} />
         <Route path="/staffs-management" element={<StaffsManagement />} />
         <Route path="/customers-management" element={<CustomersManagement />} />
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
+
         <Route path="/staff/bookings" element={<Bookings />} />
         <Route path="/staff/invoices" element={<Invoices />} />
-=======
+
         <Route path="/analytics" element={<Analytics />} />
->>>>>>> Stashed changes
-=======
-        <Route path="/analytics" element={<Analytics />} />
->>>>>>> Stashed changes
+
         {/* Thêm các route khác nếu cần */}
       </Routes>
     </>
