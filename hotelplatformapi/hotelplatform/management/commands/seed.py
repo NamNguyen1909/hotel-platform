@@ -72,27 +72,25 @@ class Command(BaseCommand):
                     id_card=fake.random_number(digits=12, fix_len=True),
                 )
                 # Set some customers as VIP/Super VIP for testing
+                # Chỉ set booking count, để update_customer_type() tự tính total_spent từ payments thật
                 if i < 3:
                     customer.total_bookings = random.randint(20, 30)
-                    customer.total_spent = Decimal(random.randint(50000000, 100000000))  # 50-100 triệu VND
                     customer.customer_type = 'super_vip'
                 elif i < 8:
                     customer.total_bookings = random.randint(10, 19)
-                    customer.total_spent = Decimal(random.randint(20000000, 49999999))  # 20-50 triệu VND
                     customer.customer_type = 'vip'
                 elif i < 15:
                     customer.total_bookings = random.randint(3, 9)
-                    customer.total_spent = Decimal(random.randint(5000000, 19999999))  # 5-20 triệu VND
                     customer.customer_type = 'regular'
                 customer.save()
 
     def create_room_types(self):
         types = [
-            ('Phòng đơn', 'Phòng tiêu chuẩn cho 1 người với đầy đủ tiện nghi cơ bản', 500, 1),
-            ('Phòng đôi', 'Phòng rộng rãi cho 2 người với 1 giường đôi', 800, 2),
-            ('Phòng gia đình', 'Phòng lớn phù hợp cho gia đình nhỏ', 1200, 4),
-            ('Phòng VIP', 'Phòng cao cấp với view đẹp và dịch vụ đặc biệt', 2000, 4),
-            ('Suite', 'Phòng hạng sang với phòng khách riêng biệt', 3500, 6),
+            ('Phòng đơn', 'Phòng tiêu chuẩn cho 1 người với đầy đủ tiện nghi cơ bản', 500000, 1),
+            ('Phòng đôi', 'Phòng rộng rãi cho 2 người với 1 giường đôi', 800000, 2),
+            ('Phòng gia đình', 'Phòng lớn phù hợp cho gia đình nhỏ', 1200000, 4),
+            ('Phòng VIP', 'Phòng cao cấp với view đẹp và dịch vụ đặc biệt', 2000000, 4),
+            ('Suite', 'Phòng hạng sang với phòng khách riêng biệt', 3500000, 6),
         ]
         for name, desc, price, max_guests in types:
             RoomType.objects.get_or_create(
@@ -199,7 +197,16 @@ class Command(BaseCommand):
                 
                 # Random rooms (1-3 phòng)
                 room_sample = random.sample(rooms, k=random.randint(1, 3))
-                total_price = sum([r.room_type.base_price for r in room_sample])
+                
+                # Tính giá dựa trên số ngày thực tế và giá phòng
+                stay_days = (check_out.date() - check_in.date()).days
+                if stay_days < 1:
+                    stay_days = 1
+                
+                total_price = Decimal('0')
+                for room in room_sample:
+                    total_price += room.room_type.base_price * stay_days
+                
                 guest_count = random.randint(1, min(4, sum([r.room_type.max_guests for r in room_sample])))
                 
                 # Tạo booking (chủ yếu là checked_out cho lịch sử)
@@ -257,7 +264,15 @@ class Command(BaseCommand):
             check_out = check_in + timedelta(days=random.randint(1, 5))
             
             room_sample = random.sample(rooms, k=random.randint(1, 2))
-            total_price = sum([r.room_type.base_price for r in room_sample])
+            
+            # Tính giá dựa trên số ngày và giá phòng thực tế
+            stay_days = (check_out.date() - check_in.date()).days
+            if stay_days < 1:
+                stay_days = 1
+            
+            total_price = Decimal('0')
+            for room in room_sample:
+                total_price += room.room_type.base_price * stay_days
             
             booking = Booking.objects.create(
                 customer=customer,
@@ -277,7 +292,15 @@ class Command(BaseCommand):
             check_out = timezone.now() + timedelta(days=random.randint(1, 4))
             
             room_sample = random.sample(rooms, k=random.randint(1, 2))
-            total_price = sum([r.room_type.base_price for r in room_sample])
+            
+            # Tính giá dựa trên số ngày và giá phòng thực tế
+            stay_days = (check_out.date() - check_in.date()).days
+            if stay_days < 1:
+                stay_days = 1
+            
+            total_price = Decimal('0')
+            for room in room_sample:
+                total_price += room.room_type.base_price * stay_days
             
             booking = Booking.objects.create(
                 customer=customer,
