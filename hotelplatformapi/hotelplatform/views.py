@@ -856,38 +856,111 @@ class StatsView(APIView):
         """
         Lấy thống kê tổng quan
         """
+        # Lấy tham số từ query string
+        year = request.GET.get('year', timezone.now().year)
+        month = request.GET.get('month', timezone.now().month)
+        
+        try:
+            year = int(year)
+            month = int(month)
+        except (ValueError, TypeError):
+            year = timezone.now().year
+            month = timezone.now().month
+        
         # Thống kê cơ bản
-        total_users = User.objects.count()
+        total_users = User.objects.filter(role='customer').count()
         total_rooms = Room.objects.count()
-        total_bookings = Booking.objects.count()
-        total_rentals = RoomRental.objects.count()
-        
-        # Thống kê phòng theo trạng thái
-        room_stats = Room.objects.values('status').annotate(count=Count('id'))
-        
-        # Thống kê booking theo trạng thái
-        booking_stats = Booking.objects.values('status').annotate(count=Count('id'))
+        total_bookings = Booking.objects.filter(
+            created_at__year=year, 
+            created_at__month=month
+        ).count()
         
         # Thống kê doanh thu
-        total_revenue = Payment.objects.filter(status=True).aggregate(total=Sum('amount'))['total'] or 0
+        total_revenue = Payment.objects.filter(
+            status=True,
+            paid_at__year=year,
+            paid_at__month=month
+        ).aggregate(total=Sum('amount'))['total'] or 0
         
-        # Thống kê theo tháng
-        from django.db.models import TruncMonth
-        monthly_revenue = Payment.objects.filter(status=True).annotate(
-            month=TruncMonth('paid_at')
-        ).values('month').annotate(revenue=Sum('amount')).order_by('month')
+        # Tỷ lệ lấp đầy phòng (giả định)
+        occupied_rooms = Room.objects.filter(status='occupied').count()
+        occupancy_rate = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
+        
+        # Thống kê doanh thu theo tháng (6 tháng gần nhất)
+        monthly_revenue = []
+        current_date = timezone.now().replace(day=1)
+        for i in range(6):
+            month_date = current_date - timedelta(days=30 * i)
+            revenue = Payment.objects.filter(
+                status=True,
+                paid_at__year=month_date.year,
+                paid_at__month=month_date.month
+            ).aggregate(total=Sum('amount'))['total'] or 0
+            
+            bookings = Booking.objects.filter(
+                created_at__year=month_date.year,
+                created_at__month=month_date.month
+            ).count()
+            
+            monthly_revenue.append({
+                'month': f'T{month_date.month}',
+                'revenue': float(revenue),
+                'bookings': bookings
+            })
+        
+        monthly_revenue.reverse()
+        
+        # Top phòng theo doanh thu
+        top_rooms = []
+        room_revenues = {}
+        rentals = RoomRental.objects.filter(
+            created_at__year=year,
+            created_at__month=month
+        ).select_related('booking')
+        
+        for rental in rentals:
+            for room in rental.rooms.all():
+                if room.room_number not in room_revenues:
+                    room_revenues[room.room_number] = {'revenue': 0, 'bookings': 0}
+                room_revenues[room.room_number]['revenue'] += float(rental.total_price or 0)
+                room_revenues[room.room_number]['bookings'] += 1
+        
+        # Sắp xếp và lấy top 5
+        sorted_rooms = sorted(room_revenues.items(), key=lambda x: x[1]['revenue'], reverse=True)[:5]
+        top_rooms = [
+            {
+                'room_number': room_number,
+                'revenue': data['revenue'],
+                'bookings': data['bookings']
+            }
+            for room_number, data in sorted_rooms
+        ]
+        
+        # Đặt phòng gần đây
+        recent_bookings = Booking.objects.filter(
+            created_at__year=year,
+            created_at__month=month
+        ).select_related('customer').prefetch_related('rooms').order_by('-created_at')[:5]
+        
+        recent_bookings_data = []
+        for booking in recent_bookings:
+            room_numbers = ', '.join([room.room_number for room in booking.rooms.all()])
+            recent_bookings_data.append({
+                'id': booking.id,
+                'customer_name': booking.customer.full_name or booking.customer.username,
+                'room_number': room_numbers,
+                'total_price': float(booking.total_price or 0),
+                'created_at': booking.created_at.date().isoformat()
+            })
         
         return Response({
-            "overview": {
-                "total_users": total_users,
-                "total_rooms": total_rooms,
-                "total_bookings": total_bookings,
-                "total_rentals": total_rentals,
-                "total_revenue": str(total_revenue),
-            },
-            "room_stats": list(room_stats),
-            "booking_stats": list(booking_stats),
-            "monthly_revenue": list(monthly_revenue),
+            "totalRevenue": float(total_revenue),
+            "totalBookings": total_bookings,
+            "totalCustomers": total_users,
+            "occupancyRate": round(occupancy_rate, 1),
+            "monthlyRevenue": monthly_revenue,
+            "topRooms": top_rooms,
+            "recentBookings": recent_bookings_data,
         })
 
 
