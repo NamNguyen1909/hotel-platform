@@ -62,9 +62,15 @@ class RoomSerializer(ModelSerializer):
     
     def get_primary_image_url(self, obj):
         # Lấy URL ảnh chính của phòng
-        primary_image = obj.get_primary_image()
-        if primary_image and primary_image.image:
-            return primary_image.image.url
+        primary_image_obj = obj.images.filter(is_primary=True).first()
+        if primary_image_obj and primary_image_obj.image:
+            return primary_image_obj.image.url
+        
+        # Nếu không có ảnh chính, lấy ảnh đầu tiên
+        first_image_obj = obj.images.first()
+        if first_image_obj and first_image_obj.image:
+            return first_image_obj.image.url
+            
         return None
     
     class Meta:
@@ -502,9 +508,15 @@ class RoomDetailSerializer(ModelSerializer):
 
     def get_primary_image(self, obj):
         # Lấy ảnh chính của phòng
-        primary_image = obj.get_primary_image()
-        if primary_image:
-            return RoomImageSerializer(primary_image, context=self.context).data
+        primary_image_obj = obj.images.filter(is_primary=True).first()
+        if primary_image_obj:
+            return RoomImageSerializer(primary_image_obj, context=self.context).data
+        
+        # Nếu không có ảnh chính, lấy ảnh đầu tiên
+        first_image_obj = obj.images.first()
+        if first_image_obj:
+            return RoomImageSerializer(first_image_obj, context=self.context).data
+            
         return None
 
     class Meta:

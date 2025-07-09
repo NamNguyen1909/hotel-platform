@@ -114,6 +114,17 @@ export const endpoints = {
     update: (id) => `/room-types/${id}/`,
     delete: (id) => `/room-types/${id}/`,
   },
+
+  // Room images endpoints
+  roomImages: {
+    list: '/room-images/',
+    detail: (id) => `/room-images/${id}/`,
+    create: '/room-images/',
+    update: (id) => `/room-images/${id}/`,
+    delete: (id) => `/room-images/${id}/`,
+    byRoom: (roomId) => `/room-images/by_room/?room_id=${roomId}`,
+    setPrimary: (id) => `/room-images/${id}/set_primary/`,
+  },
   
   // Booking management endpoints
   bookings: {
@@ -207,6 +218,51 @@ export const endpoints = {
     payment: '/settings/payment/',
     notification: '/settings/notification/',
   },
+};
+
+// Helper functions for room image management
+export const roomImageHelpers = {
+  // Upload multiple images for a room
+  uploadImages: async (roomId, files) => {
+    const formData = new FormData();
+    formData.append('room', roomId);
+    
+    const uploadPromises = files.map(async (file, index) => {
+      const fileFormData = new FormData();
+      fileFormData.append('room', roomId);
+      fileFormData.append('image', file);
+      fileFormData.append('caption', file.name);
+      fileFormData.append('is_primary', index === 0); // First image is primary by default
+      
+      return api.post(endpoints.roomImages.create, fileFormData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+    });
+    
+    return Promise.all(uploadPromises);
+  },
+
+  // Get all images for a specific room
+  getRoomImages: async (roomId) => {
+    return api.get(endpoints.roomImages.byRoom(roomId));
+  },
+
+  // Set an image as primary
+  setPrimaryImage: async (imageId) => {
+    return api.post(endpoints.roomImages.setPrimary(imageId));
+  },
+
+  // Delete an image
+  deleteImage: async (imageId) => {
+    return api.delete(endpoints.roomImages.delete(imageId));
+  },
+
+  // Update image caption
+  updateImage: async (imageId, data) => {
+    return api.put(endpoints.roomImages.update(imageId), data);
+  }
 };
 
 export default api;

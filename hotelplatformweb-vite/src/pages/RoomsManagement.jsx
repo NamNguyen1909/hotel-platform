@@ -32,6 +32,10 @@ import {
   Tabs,
   Tab,
   InputAdornment,
+  ImageList,
+  ImageListItem,
+  ImageListItemBar,
+  CardMedia,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -43,9 +47,13 @@ import {
   Category as CategoryIcon,
   AttachMoney as MoneyIcon,
   People as PeopleIcon,
+  CloudUpload as UploadIcon,
+  Image as ImageIcon,
+  Star as StarIcon,
+  StarBorder as StarBorderIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import api,{  endpoints } from '../services/apis';
+import api, { endpoints, roomImageHelpers } from '../services/apis';
 
 const RoomsManagement = () => {
   const navigate = useNavigate();
@@ -63,6 +71,12 @@ const RoomsManagement = () => {
     status: 'available'
   });
   const [addLoading, setAddLoading] = useState(false);
+
+  // Room image states
+  const [selectedImages, setSelectedImages] = useState([]);
+  const [roomImages, setRoomImages] = useState([]);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [selectedRoomForImages, setSelectedRoomForImages] = useState(null);
 
   // RoomType states
   const [openRoomTypeModal, setOpenRoomTypeModal] = useState(false);
@@ -166,6 +180,7 @@ const RoomsManagement = () => {
       room_type: '',
       status: 'available'
     });
+    setSelectedImages([]);
     setError(null);
   };
 
@@ -191,8 +206,14 @@ const RoomsManagement = () => {
         return;
       }
 
-      // Submit to API
+      // Submit room to API
       const response = await api.post(endpoints.rooms.create, addRoomData);
+      const newRoom = response.data;
+
+      // Upload images if any selected
+      if (selectedImages.length > 0) {
+        await handleUploadImages(newRoom.id);
+      }
       
       // Refresh rooms list
       const roomsResponse = await api.get(endpoints.rooms.list);
@@ -206,7 +227,7 @@ const RoomsManagement = () => {
       }
       setRooms(roomsData);
 
-      // Close modal
+      // Close modal and reset form
       handleCloseAddModal();
     } catch (err) {
       console.error('Error adding room:', err);
@@ -219,6 +240,89 @@ const RoomsManagement = () => {
   // Tab change handler
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
+  };
+
+  // Image handling functions
+  const handleImageSelect = (event) => {
+    const files = Array.from(event.target.files);
+    const validFiles = files.filter(file => {
+      const isValidType = file.type.startsWith('image/');
+      const isValidSize = file.size <= 10 * 1024 * 1024; // 10MB max
+      return isValidType && isValidSize;
+    });
+
+    if (validFiles.length !== files.length) {
+      setError('Một số file không hợp lệ. Chỉ chấp nhận file ảnh dưới 10MB.');
+    }
+
+    setSelectedImages(prev => [...prev, ...validFiles]);
+  };
+
+  const handleRemoveSelectedImage = (index) => {
+    setSelectedImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleUploadImages = async (roomId) => {
+    if (selectedImages.length === 0) return;
+
+    try {
+      setImageLoading(true);
+      await roomImageHelpers.uploadImages(roomId, selectedImages);
+      setSelectedImages([]);
+      
+      // Refresh room images if we're viewing them
+      if (selectedRoomForImages === roomId) {
+        await loadRoomImages(roomId);
+      }
+    } catch (error) {
+      console.error('Error uploading images:', error);
+      setError('Không thể tải ảnh lên. Vui lòng thử lại.');
+    } finally {
+      setImageLoading(false);
+    }
+  };
+
+  const loadRoomImages = async (roomId) => {
+    try {
+      const response = await roomImageHelpers.getRoomImages(roomId);
+      setRoomImages(response.data.images || []);
+    } catch (error) {
+      console.error('Error loading room images:', error);
+      setRoomImages([]);
+    }
+  };
+
+  const handleSetPrimaryImage = async (imageId) => {
+    try {
+      await roomImageHelpers.setPrimaryImage(imageId);
+      
+      // Refresh room images
+      if (selectedRoomForImages) {
+        await loadRoomImages(selectedRoomForImages);
+      }
+    } catch (error) {
+      console.error('Error setting primary image:', error);
+      setError('Không thể đặt ảnh chính. Vui lòng thử lại.');
+    }
+  };
+
+  const handleDeleteImage = async (imageId) => {
+    try {
+      await roomImageHelpers.deleteImage(imageId);
+      
+      // Refresh room images
+      if (selectedRoomForImages) {
+        await loadRoomImages(selectedRoomForImages);
+      }
+    } catch (error) {
+      console.error('Error deleting image:', error);
+      setError('Không thể xóa ảnh. Vui lòng thử lại.');
+    }
+  };
+
+  const handleViewRoomImages = async (roomId) => {
+    setSelectedRoomForImages(roomId);
+    await loadRoomImages(roomId);
   };
 
   // RoomType handlers
@@ -526,6 +630,11 @@ const RoomsManagement = () => {
                             />
                           </TableCell>
                           <TableCell align="center">
+                            <Tooltip title="Quản lý ảnh">
+                              <IconButton onClick={() => handleViewRoomImages(room.id)}>
+                                <ImageIcon />
+                              </IconButton>
+                            </Tooltip>
                             <Tooltip title="Xem chi tiết">
                               <IconButton onClick={() => handleViewRoom(room.id)}>
                                 <ViewIcon />
@@ -718,7 +827,7 @@ const RoomsManagement = () => {
       <Dialog 
         open={openAddModal} 
         onClose={handleCloseAddModal}
-        maxWidth="sm"
+        maxWidth="md"
         fullWidth
       >
         <DialogTitle>
@@ -738,42 +847,137 @@ const RoomsManagement = () => {
           )}
           
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
-            <TextField
-              label="Số phòng"
-              value={addRoomData.room_number}
-              onChange={(e) => handleAddRoomChange('room_number', e.target.value)}
-              fullWidth
-              required
-              placeholder="Ví dụ: 101, A203, ..."
-            />
-            
-            <FormControl fullWidth required>
-              <InputLabel>Loại phòng</InputLabel>
-              <Select
-                value={addRoomData.room_type}
-                onChange={(e) => handleAddRoomChange('room_type', e.target.value)}
-                label="Loại phòng"
-              >
-                {roomTypes.map((type) => (
-                  <MenuItem key={type.id} value={type.id}>
-                    {type.name} - {parseFloat(type.base_price).toLocaleString('vi-VN')} VND/đêm
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            
-            <FormControl fullWidth>
-              <InputLabel>Trạng thái</InputLabel>
-              <Select
-                value={addRoomData.status}
-                onChange={(e) => handleAddRoomChange('status', e.target.value)}
-                label="Trạng thái"
-              >
-                <MenuItem value="available">Trống</MenuItem>
-                <MenuItem value="booked">Đã đặt</MenuItem>
-                <MenuItem value="occupied">Đang sử dụng</MenuItem>
-              </Select>
-            </FormControl>
+            {/* Basic Room Information */}
+            <Box>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                Thông tin cơ bản
+              </Typography>
+              
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <TextField
+                  label="Số phòng"
+                  value={addRoomData.room_number}
+                  onChange={(e) => handleAddRoomChange('room_number', e.target.value)}
+                  fullWidth
+                  required
+                  placeholder="Ví dụ: 101, A203, ..."
+                />
+                
+                <FormControl fullWidth required>
+                  <InputLabel>Loại phòng</InputLabel>
+                  <Select
+                    value={addRoomData.room_type}
+                    onChange={(e) => handleAddRoomChange('room_type', e.target.value)}
+                    label="Loại phòng"
+                  >
+                    {roomTypes.map((type) => (
+                      <MenuItem key={type.id} value={type.id}>
+                        {type.name} - {parseFloat(type.base_price).toLocaleString('vi-VN')} VND/đêm
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                
+                <FormControl fullWidth>
+                  <InputLabel>Trạng thái</InputLabel>
+                  <Select
+                    value={addRoomData.status}
+                    onChange={(e) => handleAddRoomChange('status', e.target.value)}
+                    label="Trạng thái"
+                  >
+                    <MenuItem value="available">Trống</MenuItem>
+                    <MenuItem value="booked">Đã đặt</MenuItem>
+                    <MenuItem value="occupied">Đang sử dụng</MenuItem>
+                  </Select>
+                </FormControl>
+              </Box>
+            </Box>
+
+            <Divider />
+
+            {/* Room Images */}
+            <Box>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                Ảnh phòng
+              </Typography>
+              
+              {/* Upload Button */}
+              <Box sx={{ mb: 2 }}>
+                <Button
+                  variant="outlined"
+                  component="label"
+                  startIcon={<UploadIcon />}
+                  sx={{ mb: 2 }}
+                >
+                  Chọn ảnh
+                  <input
+                    type="file"
+                    hidden
+                    multiple
+                    accept="image/*"
+                    onChange={handleImageSelect}
+                  />
+                </Button>
+                
+                <Typography variant="body2" color="textSecondary">
+                  Chọn nhiều ảnh (tối đa 10MB/ảnh). Ảnh đầu tiên sẽ được đặt làm ảnh chính.
+                </Typography>
+              </Box>
+
+              {/* Selected Images Preview */}
+              {selectedImages.length > 0 && (
+                <Box>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                    Ảnh đã chọn ({selectedImages.length})
+                  </Typography>
+                  
+                  <ImageList cols={3} rowHeight={120} sx={{ mb: 2 }}>
+                    {selectedImages.map((file, index) => (
+                      <ImageListItem key={index}>
+                        <img
+                          src={URL.createObjectURL(file)}
+                          alt={file.name}
+                          loading="lazy"
+                          style={{ 
+                            height: '120px', 
+                            objectFit: 'cover' 
+                          }}
+                        />
+                        <ImageListItemBar
+                          title={index === 0 ? 'Ảnh chính' : `Ảnh ${index + 1}`}
+                          subtitle={file.name}
+                          actionIcon={
+                            <IconButton
+                              sx={{ color: 'rgba(255, 255, 255, 0.54)' }}
+                              onClick={() => handleRemoveSelectedImage(index)}
+                            >
+                              <CloseIcon />
+                            </IconButton>
+                          }
+                        />
+                        {index === 0 && (
+                          <Box
+                            sx={{
+                              position: 'absolute',
+                              top: 8,
+                              left: 8,
+                              bgcolor: 'primary.main',
+                              color: 'white',
+                              borderRadius: 1,
+                              px: 1,
+                              py: 0.5,
+                              fontSize: '0.75rem'
+                            }}
+                          >
+                            Ảnh chính
+                          </Box>
+                        )}
+                      </ImageListItem>
+                    ))}
+                  </ImageList>
+                </Box>
+              )}
+            </Box>
           </Box>
         </DialogContent>
         
@@ -975,6 +1179,184 @@ const RoomsManagement = () => {
             startIcon={deleteLoading ? <CircularProgress size={16} /> : <DeleteIcon />}
           >
             {deleteLoading ? 'Đang xóa...' : 'Xóa loại phòng'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Room Images Management Modal */}
+      <Dialog
+        open={selectedRoomForImages !== null}
+        onClose={() => setSelectedRoomForImages(null)}
+        maxWidth="lg"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">
+              Quản lý ảnh phòng {selectedRoomForImages && rooms.find(r => r.id === selectedRoomForImages)?.room_number}
+            </Typography>
+            <IconButton onClick={() => setSelectedRoomForImages(null)}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+
+        <DialogContent dividers>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+
+          {/* Upload Section */}
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              Thêm ảnh mới
+            </Typography>
+            
+            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
+              <Button
+                variant="outlined"
+                component="label"
+                startIcon={<UploadIcon />}
+                disabled={imageLoading}
+              >
+                Chọn ảnh
+                <input
+                  type="file"
+                  hidden
+                  multiple
+                  accept="image/*"
+                  onChange={handleImageSelect}
+                />
+              </Button>
+              
+              {selectedImages.length > 0 && (
+                <Button
+                  variant="contained"
+                  onClick={() => handleUploadImages(selectedRoomForImages)}
+                  disabled={imageLoading}
+                  startIcon={imageLoading ? <CircularProgress size={16} /> : <UploadIcon />}
+                >
+                  {imageLoading ? 'Đang tải lên...' : `Tải lên ${selectedImages.length} ảnh`}
+                </Button>
+              )}
+            </Box>
+
+            {/* Selected Images Preview */}
+            {selectedImages.length > 0 && (
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                  Ảnh đã chọn
+                </Typography>
+                <ImageList cols={4} rowHeight={120} sx={{ mb: 2 }}>
+                  {selectedImages.map((file, index) => (
+                    <ImageListItem key={index}>
+                      <img
+                        src={URL.createObjectURL(file)}
+                        alt={file.name}
+                        loading="lazy"
+                        style={{ height: '120px', objectFit: 'cover' }}
+                      />
+                      <ImageListItemBar
+                        title={file.name}
+                        actionIcon={
+                          <IconButton
+                            sx={{ color: 'rgba(255, 255, 255, 0.54)' }}
+                            onClick={() => handleRemoveSelectedImage(index)}
+                          >
+                            <CloseIcon />
+                          </IconButton>
+                        }
+                      />
+                    </ImageListItem>
+                  ))}
+                </ImageList>
+              </Box>
+            )}
+          </Box>
+
+          <Divider sx={{ mb: 3 }} />
+
+          {/* Existing Images */}
+          <Box>
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              Ảnh hiện tại ({roomImages.length})
+            </Typography>
+            
+            {roomImages.length === 0 ? (
+              <Box sx={{ textAlign: 'center', py: 4 }}>
+                <ImageIcon sx={{ fontSize: 48, color: 'grey.400', mb: 2 }} />
+                <Typography variant="body1" color="textSecondary">
+                  Chưa có ảnh nào cho phòng này
+                </Typography>
+              </Box>
+            ) : (
+              <ImageList cols={3} rowHeight={200}>
+                {roomImages.map((image) => (
+                  <ImageListItem key={image.id}>
+                    <img
+                      src={image.image_url}
+                      alt={image.caption || 'Room image'}
+                      loading="lazy"
+                      style={{ height: '200px', objectFit: 'cover' }}
+                    />
+                    <ImageListItemBar
+                      title={image.caption || 'Không có tiêu đề'}
+                      subtitle={image.is_primary ? 'Ảnh chính' : ''}
+                      actionIcon={
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          <Tooltip title={image.is_primary ? 'Ảnh chính' : 'Đặt làm ảnh chính'}>
+                            <IconButton
+                              sx={{ color: 'rgba(255, 255, 255, 0.54)' }}
+                              onClick={() => !image.is_primary && handleSetPrimaryImage(image.id)}
+                              disabled={image.is_primary}
+                            >
+                              {image.is_primary ? <StarIcon /> : <StarBorderIcon />}
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Xóa ảnh">
+                            <IconButton
+                              sx={{ color: 'rgba(255, 255, 255, 0.54)' }}
+                              onClick={() => handleDeleteImage(image.id)}
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+                      }
+                    />
+                    {image.is_primary && (
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          top: 8,
+                          left: 8,
+                          bgcolor: 'primary.main',
+                          color: 'white',
+                          borderRadius: 1,
+                          px: 1,
+                          py: 0.5,
+                          fontSize: '0.75rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 0.5
+                        }}
+                      >
+                        <StarIcon sx={{ fontSize: '1rem' }} />
+                        Ảnh chính
+                      </Box>
+                    )}
+                  </ImageListItem>
+                ))}
+              </ImageList>
+            )}
+          </Box>
+        </DialogContent>
+
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setSelectedRoomForImages(null)} variant="outlined">
+            Đóng
           </Button>
         </DialogActions>
       </Dialog>
