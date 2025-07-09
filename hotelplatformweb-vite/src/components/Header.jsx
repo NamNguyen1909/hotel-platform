@@ -51,28 +51,18 @@ const menuItemsByRole = {
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
     { text: 'Quản lý phòng', icon: <Hotel />, path: '/rooms' },
     { text: 'Quản lý khách hàng', icon: <People />, path: '/customers' },
-    { text: 'Đặt phòng', icon: <Book />, path: '/bookings' },
-    { text: 'Thanh toán', icon: <Payment />, path: '/payments' },
-    { text: 'Báo cáo', icon: <Assessment />, path: '/reports' },
     { text: 'Quản lý nhân viên', icon: <AdminPanelSettings />, path: '/staff' },
-    { text: 'Cài đặt', icon: <Settings />, path: '/settings' },
   ],
   owner: [
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
     { text: 'Quản lý phòng', icon: <Hotel />, path: '/rooms-management' },
     { text: 'Quản lý khách hàng', icon: <People />, path: '/customers' },
-    { text: 'Đặt phòng', icon: <Book />, path: '/bookings' },
-    { text: 'Thanh toán', icon: <Payment />, path: '/payments' },
-    { text: 'Báo cáo', icon: <Assessment />, path: '/reports' },
     { text: 'Quản lý nhân viên', icon: <AdminPanelSettings />, path: '/staff' },
-    { text: 'Cài đặt', icon: <Settings />, path: '/settings' },
   ],
   staff: [
-    { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
     { text: 'Phòng', icon: <Hotel />, path: '/rooms' },
     { text: 'Khách hàng', icon: <People />, path: '/customers' },
     { text: 'Đặt phòng', icon: <Book />, path: '/bookings' },
-    { text: 'Dịch vụ', icon: <RoomService />, path: '/services' },
     { text: 'Hóa đơn', icon: <Receipt />, path: '/invoices' },
   ],
   customer: [
@@ -83,7 +73,6 @@ const menuItemsByRole = {
   ],
   guest: [
     { text: 'Trang chủ', icon: <Home />, path: '/' },
-
     { text: 'Đăng nhập', icon: <Login />, path: '/login' },
     { text: 'Đăng ký', icon: <PersonAdd />, path: '/register' },
   ],
