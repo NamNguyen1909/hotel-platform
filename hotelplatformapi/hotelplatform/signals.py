@@ -1,6 +1,29 @@
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_save, pre_save, post_migrate
 from django.dispatch import receiver
+from django.contrib.auth import get_user_model
+from django.apps import apps
 from .models import Booking, BookingStatus, Notification
+
+User = get_user_model()
+
+
+@receiver(post_migrate)
+def create_superuser(sender, **kwargs):
+    """
+    Signal tạo superuser tự động sau khi migrate nếu chưa có
+    """
+    if sender.name == 'hotelplatform':  # Chỉ chạy khi migrate app hotelplatform
+        if not User.objects.filter(is_superuser=True).exists():
+            try:
+                User.objects.create_superuser(
+                    username='admin',
+                    email='admin@gmail.com',
+                    password='123',
+                    full_name='admin'
+                )
+                print("✅ Đã tạo superuser tự động: admin/123")
+            except Exception as e:
+                print(f"❌ Lỗi khi tạo superuser: {e}")
 
 
 @receiver(post_save, sender=Booking)
