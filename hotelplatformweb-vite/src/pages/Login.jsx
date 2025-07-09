@@ -74,8 +74,28 @@ const Login = () => {
       // Store tokens using authUtils
       authUtils.setTokens(response.data.access, response.data.refresh);
 
-      // Redirect to dashboard or home page
-      navigate('/');
+      // Get user info to determine role-based navigation
+      const userInfo = await authUtils.getCurrentUser();
+      const userRole = userInfo?.role;
+
+      // Navigate based on user role
+    // Navigate based on user role
+    switch (userRole) {
+      case 'owner':
+        navigate('/dashboard');
+        break;
+      case 'admin':
+        navigate('/dashboard'); // hoặc trang khác
+        break;
+      case 'staff':
+        navigate('/rooms'); // hoặc trang khác
+        break;
+      case 'customer':
+        navigate('/'); // home page
+        break;
+      default:
+        navigate('/');
+    }
       
     } catch (err) {
       console.error('Login error:', err);

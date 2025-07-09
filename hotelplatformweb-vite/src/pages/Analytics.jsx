@@ -67,39 +67,25 @@ const Analytics = () => {
   const loadStats = async () => {
     setLoading(true);
     try {
-      const response = await api.get(`${endpoints.stats.overview}?year=${selectedYear}&month=${selectedMonth}`);
+      const url = `${endpoints.stats.overview}?year=${selectedYear}&month=${selectedMonth}`;
+      console.log('Loading stats from:', url); // Debug log
+      const response = await api.get(url);
+      console.log('Stats data received:', response.data); // Debug log
       setStatsData(response.data);
     } catch (error) {
       console.error('Error loading stats:', error);
-      showAlert('error', 'Lỗi khi tải dữ liệu thống kê');
-      // Mock data for demo
+      console.error('Error details:', error.response?.data || error.message);
+      showAlert('error', 'Không thể tải dữ liệu thống kê từ server');
+      
+      // Đặt về trạng thái trống thay vì mock data
       setStatsData({
-        totalRevenue: 125650000,
-        totalBookings: 89,
-        totalCustomers: 234,
-        occupancyRate: 78.5,
-        monthlyRevenue: [
-          { month: 'T1', revenue: 98500000, bookings: 67 },
-          { month: 'T2', revenue: 112300000, bookings: 78 },
-          { month: 'T3', revenue: 125650000, bookings: 89 },
-          { month: 'T4', revenue: 134200000, bookings: 92 },
-          { month: 'T5', revenue: 142100000, bookings: 95 },
-          { month: 'T6', revenue: 156800000, bookings: 103 }
-        ],
-        topRooms: [
-          { room_number: '101', bookings: 24, revenue: 36000000 },
-          { room_number: '201', bookings: 22, revenue: 44000000 },
-          { room_number: '301', bookings: 20, revenue: 50000000 },
-          { room_number: '102', bookings: 18, revenue: 27000000 },
-          { room_number: '202', bookings: 16, revenue: 32000000 }
-        ],
-        recentBookings: [
-          { id: 1, customer_name: 'Nguyễn Văn A', room_number: '101', total_price: 1500000, created_at: '2024-12-20' },
-          { id: 2, customer_name: 'Trần Thị B', room_number: '201', total_price: 2000000, created_at: '2024-12-19' },
-          { id: 3, customer_name: 'Lê Văn C', room_number: '301', total_price: 2500000, created_at: '2024-12-18' },
-          { id: 4, customer_name: 'Phạm Thị D', room_number: '102', total_price: 1500000, created_at: '2024-12-17' },
-          { id: 5, customer_name: 'Hoàng Văn E', room_number: '202', total_price: 2000000, created_at: '2024-12-16' }
-        ]
+        totalRevenue: 0,
+        totalBookings: 0,
+        totalCustomers: 0,
+        occupancyRate: 0,
+        monthlyRevenue: [],
+        topRooms: [],
+        recentBookings: []
       });
     } finally {
       setLoading(false);
@@ -115,17 +101,21 @@ const Analytics = () => {
   };
 
   const formatCurrency = (amount) => {
+    if (!amount || amount === 0) return '0₫';
     return new Intl.NumberFormat('vi-VN', { 
       style: 'currency', 
-      currency: 'VND' 
+      currency: 'VND',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
     }).format(amount);
   };
 
   const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('vi-VN');
   };
 
-  const StatCard = ({ title, value, icon, color, trend, trendValue }) => (
+  const StatCard = ({ title, value, icon, color, trend, trendValue, tooltip }) => (
     <Card sx={{ height: '100%', background: `linear-gradient(135deg, ${color}20 0%, ${color}10 100%)` }}>
       <CardContent>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
@@ -152,54 +142,126 @@ const Analytics = () => {
         <Typography variant="h4" sx={{ fontWeight: 'bold', color: color, mb: 1 }}>
           {value}
         </Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="text.secondary" title={tooltip}>
           {title}
+          {tooltip && (
+            <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontStyle: 'italic' }}>
+              💡 {tooltip}
+            </Typography>
+          )}
         </Typography>
       </CardContent>
     </Card>
   );
 
   // Simple chart component using CSS
-  const SimpleBarChart = ({ data, height = 200 }) => (
-    <Box sx={{ p: 2 }}>
-      <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
-        Doanh thu theo tháng ({selectedYear})
-      </Typography>
-      <Box sx={{ display: 'flex', alignItems: 'end', gap: 1, height: height }}>
-        {data.map((item, index) => {
-          const maxRevenue = Math.max(...data.map(d => d.revenue));
-          const barHeight = (item.revenue / maxRevenue) * (height - 40);
-          
-          return (
-            <Box key={index} sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <Typography variant="caption" sx={{ mb: 1, fontWeight: 'bold' }}>
-                {formatCurrency(item.revenue)}
-              </Typography>
-              <Box
-                sx={{
-                  width: '100%',
-                  height: barHeight,
-                  background: (theme) => `linear-gradient(to top, ${theme.palette.primary.main}, ${theme.palette.primary.light})`,
-                  borderRadius: '4px 4px 0 0',
-                  transition: 'all 0.3s ease',
-                  '&:hover': {
-                    transform: 'scale(1.05)',
-                    boxShadow: 2
-                  }
+  const SimpleBarChart = ({ data, height = 350 }) => {
+    const maxRevenue = Math.max(...data.map(d => d.revenue));
+    const chartAreaHeight = height - 120; // Giảm khoảng cách cho labels
+    
+    return (
+      <Box sx={{ p: 3 }}>
+        <Typography variant="h6" sx={{ mb: 3, fontWeight: 'bold', textAlign: 'center' }}>
+          Doanh thu theo tháng ({selectedYear})
+        </Typography>
+        
+        <Box sx={{ 
+          display: 'flex', 
+          alignItems: 'end', 
+          gap: 1, 
+          height: chartAreaHeight,
+          px: 2,
+          pb: 2
+        }}>
+          {data.map((item, index) => {
+            const barHeight = maxRevenue > 0 ? (item.revenue / maxRevenue) * (chartAreaHeight - 80) : 0;
+            const hasData = item.revenue > 0;
+            
+            return (
+              <Box 
+                key={index} 
+                sx={{ 
+                  flex: 1, 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  alignItems: 'center',
+                  minWidth: 0 // Prevent flex item from growing too much
                 }}
-              />
-              <Typography variant="caption" sx={{ mt: 1, fontWeight: 'bold' }}>
-                {item.month}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {item.bookings} đơn
-              </Typography>
-            </Box>
-          );
-        })}
+              >
+                {/* Revenue amount on top */}
+                <Typography 
+                  variant="caption" 
+                  sx={{ 
+                    mb: 1, 
+                    fontWeight: 'bold',
+                    fontSize: '0.7rem',
+                    textAlign: 'center',
+                    color: hasData ? 'primary.main' : 'text.disabled',
+                    minHeight: '20px',
+                    display: 'flex',
+                    alignItems: 'center'
+                  }}
+                >
+                  {hasData ? formatCurrency(item.revenue) : '0đ'}
+                </Typography>
+                
+                {/* Bar */}
+                <Box
+                  sx={{
+                    width: '80%',
+                    height: Math.max(barHeight, 4), // Minimum height 4px
+                    background: hasData 
+                      ? (theme) => `linear-gradient(to top, ${theme.palette.primary.main}, ${theme.palette.primary.light})`
+                      : (theme) => theme.palette.grey[300],
+                    borderRadius: '4px 4px 0 0',
+                    transition: 'all 0.3s ease',
+                    cursor: 'pointer',
+                    '&:hover': {
+                      transform: hasData ? 'scale(1.05)' : 'none',
+                      boxShadow: hasData ? 2 : 0
+                    },
+                    mb: 1
+                  }}
+                  title={`${item.month}: ${formatCurrency(item.revenue)} - ${item.bookings} đơn`}
+                />
+                
+                {/* Month label */}
+                <Typography 
+                  variant="body2" 
+                  sx={{ 
+                    fontWeight: 'bold',
+                    mb: 0.5,
+                    color: 'text.primary'
+                  }}
+                >
+                  {item.month}
+                </Typography>
+                
+                {/* Bookings count */}
+                <Typography 
+                  variant="caption" 
+                  sx={{ 
+                    color: 'text.secondary',
+                    fontSize: '0.7rem',
+                    textAlign: 'center'
+                  }}
+                >
+                  {item.bookings || 0} đơn
+                </Typography>
+              </Box>
+            );
+          })}
+        </Box>
+        
+        {/* Legend */}
+        <Box sx={{ mt: 2, textAlign: 'center' }}>
+          <Typography variant="caption" color="text.secondary">
+            💡 Hover vào cột để xem chi tiết
+          </Typography>
+        </Box>
       </Box>
-    </Box>
-  );
+    );
+  };
 
   return (
     <Box sx={{ p: 3, maxWidth: 1400, mx: 'auto' }}>
@@ -290,6 +352,11 @@ const Analytics = () => {
       {loading && (
         <Box sx={{ mb: 3 }}>
           <LinearProgress />
+          <Box sx={{ textAlign: 'center', mt: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              Đang tải dữ liệu thống kê từ server...
+            </Typography>
+          </Box>
         </Box>
       )}
 
@@ -298,41 +365,41 @@ const Analytics = () => {
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Tổng doanh thu"
-            value={formatCurrency(statsData.totalRevenue)}
+            value={formatCurrency(statsData.totalRevenue || 0)}
             icon={<MoneyIcon />}
             color="#2E8B57"
-            trend="up"
-            trendValue="12.5"
+            trend={statsData.totalRevenue > 0 ? "up" : null}
+            trendValue={statsData.totalRevenue > 0 ? "12.5" : null}
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Tổng đặt phòng"
-            value={statsData.totalBookings}
+            value={statsData.totalBookings || 0}
             icon={<BookingIcon />}
             color="#FF8C00"
-            trend="up"
-            trendValue="8.3"
+            trend={statsData.totalBookings > 0 ? "up" : null}
+            trendValue={statsData.totalBookings > 0 ? "8.3" : null}
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Khách hàng"
-            value={statsData.totalCustomers}
+            value={statsData.totalCustomers || 0}
             icon={<PeopleIcon />}
             color="#8B4513"
-            trend="up"
-            trendValue="15.2"
+            trend={statsData.totalCustomers > 0 ? "up" : null}
+            trendValue={statsData.totalCustomers > 0 ? "15.2" : null}
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Tỷ lệ lấp đầy"
-            value={`${statsData.occupancyRate}%`}
+            value={`${statsData.occupancyRate || 0}%`}
             icon={<HotelIcon />}
             color="#DAA520"
-            trend="down"
-            trendValue="2.1"
+            trend={statsData.occupancyRate > 50 ? "up" : statsData.occupancyRate > 0 ? "down" : null}
+            trendValue={statsData.occupancyRate > 0 ? "2.1" : null}
           />
         </Grid>
       </Grid>
@@ -340,39 +407,73 @@ const Analytics = () => {
       {/* Charts Row */}
       <Grid container spacing={3} sx={{ mb: 3 }}>
         <Grid item xs={12} lg={8}>
-          <Card>
-            <SimpleBarChart data={statsData.monthlyRevenue} />
+          <Card sx={{ height: 500 }}>
+            {statsData.monthlyRevenue && statsData.monthlyRevenue.length > 0 ? (
+              <SimpleBarChart data={statsData.monthlyRevenue} height={460} />
+            ) : (
+              <Box sx={{ 
+                height: 460, 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                flexDirection: 'column',
+                gap: 2
+              }}>
+                <AnalyticsIcon sx={{ fontSize: 60, color: 'text.secondary' }} />
+                <Typography variant="h6" color="text.secondary">
+                  Chưa có dữ liệu doanh thu
+                </Typography>
+                <Typography variant="body2" color="text.secondary" textAlign="center">
+                  Dữ liệu sẽ hiển thị khi có booking được thanh toán thành công
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Năm: {selectedYear} | Tháng: {selectedMonth}
+                </Typography>
+              </Box>
+            )}
           </Card>
         </Grid>
         <Grid item xs={12} lg={4}>
-          <Card sx={{ height: '100%' }}>
+          <Card sx={{ height: 500 }}>
             <CardContent>
               <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
                 Top phòng theo doanh thu
               </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {statsData.topRooms.map((room, index) => (
-                  <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Chip
-                      label={`#${index + 1}`}
-                      size="small"
-                      color={index === 0 ? 'warning' : index === 1 ? 'default' : 'default'}
-                      sx={{ minWidth: 35 }}
-                    />
-                    <Box sx={{ flex: 1 }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                        Phòng {room.room_number}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {room.bookings} lượt đặt
+              {statsData.topRooms && statsData.topRooms.length > 0 ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {statsData.topRooms.map((room, index) => (
+                    <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Chip
+                        label={`#${index + 1}`}
+                        size="small"
+                        color={index === 0 ? 'warning' : index === 1 ? 'default' : 'default'}
+                        sx={{ minWidth: 35 }}
+                      />
+                      <Box sx={{ flex: 1 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                          Phòng {room.room_number}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {room.bookings || 0} lượt đặt
+                        </Typography>
+                      </Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'success.main' }}>
+                        {formatCurrency(room.revenue || 0)}
                       </Typography>
                     </Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'success.main' }}>
-                      {formatCurrency(room.revenue)}
-                    </Typography>
-                  </Box>
-                ))}
-              </Box>
+                  ))}
+                </Box>
+              ) : (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <HotelIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+                  <Typography variant="body2" color="text.secondary">
+                    Chưa có dữ liệu phòng
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Thống kê sẽ hiển thị khi có booking
+                  </Typography>
+                </Box>
+              )}
             </CardContent>
           </Card>
         </Grid>
@@ -384,65 +485,77 @@ const Analytics = () => {
           <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
             Đặt phòng gần đây
           </Typography>
-          <TableContainer component={Paper} sx={{ maxHeight: 400 }}>
-            <Table stickyHeader>
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
-                    Mã đặt phòng
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
-                    Khách hàng
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
-                    Phòng
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
-                    Tổng tiền
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
-                    Ngày đặt
-                  </TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {statsData.recentBookings.map((booking) => (
-                  <TableRow key={booking.id} hover>
-                    <TableCell>
-                      <Chip 
-                        label={`#${booking.id}`} 
-                        size="small" 
-                        color="primary" 
-                        variant="outlined"
-                      />
+          {statsData.recentBookings && statsData.recentBookings.length > 0 ? (
+            <TableContainer component={Paper} sx={{ maxHeight: 400 }}>
+              <Table stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
+                      Mã đặt phòng
                     </TableCell>
-                    <TableCell>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                        {booking.customer_name}
-                      </Typography>
+                    <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
+                      Khách hàng
                     </TableCell>
-                    <TableCell>
-                      <Chip 
-                        label={booking.room_number} 
-                        size="small" 
-                        color="secondary"
-                      />
+                    <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
+                      Phòng
                     </TableCell>
-                    <TableCell>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'success.main' }}>
-                        {formatCurrency(booking.total_price)}
-                      </Typography>
+                    <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
+                      Tổng tiền
                     </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" color="text.secondary">
-                        {formatDate(booking.created_at)}
-                      </Typography>
+                    <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
+                      Ngày đặt
                     </TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                </TableHead>
+                <TableBody>
+                  {statsData.recentBookings.map((booking) => (
+                    <TableRow key={booking.id} hover>
+                      <TableCell>
+                        <Chip 
+                          label={`#${booking.id}`} 
+                          size="small" 
+                          color="primary" 
+                          variant="outlined"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                          {booking.customer_name || 'N/A'}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={booking.room_number || 'N/A'} 
+                          size="small" 
+                          color="secondary"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'success.main' }}>
+                          {formatCurrency(booking.total_price || 0)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {formatDate(booking.created_at)}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          ) : (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <BookingIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+              <Typography variant="body2" color="text.secondary">
+                Chưa có dữ liệu đặt phòng
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Danh sách sẽ hiển thị khi có booking mới
+              </Typography>
+            </Box>
+          )}
         </CardContent>
       </Card>
 

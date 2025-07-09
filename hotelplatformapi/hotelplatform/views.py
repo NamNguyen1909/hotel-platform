@@ -882,9 +882,35 @@ class StatsView(APIView):
             paid_at__month=month
         ).aggregate(total=Sum('amount'))['total'] or 0
         
-        # Tỷ lệ lấp đầy phòng (giả định)
-        occupied_rooms = Room.objects.filter(status='occupied').count()
-        occupancy_rate = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
+        # Tỷ lệ lấp đầy phòng trong tháng được chọn (dựa trên RoomRental)
+        from datetime import date
+        from calendar import monthrange
+        
+        # Tính số ngày trong tháng
+        days_in_month = monthrange(year, month)[1]
+        
+        # Tổng số "phòng-ngày" có thể cho thuê trong tháng
+        total_room_days = total_rooms * days_in_month
+        
+        # Tổng số "phòng-ngày" đã được thuê trong tháng
+        occupied_room_days = 0
+        rentals_in_month = RoomRental.objects.filter(
+            check_in_date__year=year,
+            check_in_date__month=month
+        ).prefetch_related('rooms')
+        
+        for rental in rentals_in_month:
+            # Tính số ngày thuê trong tháng này
+            check_in = rental.check_in_date.date() if rental.check_in_date.date().month == month else date(year, month, 1)
+            check_out = rental.check_out_date.date() if rental.check_out_date.date().month == month else date(year, month, days_in_month)
+            
+            if check_out > check_in:
+                rental_days = (check_out - check_in).days
+                room_count = rental.rooms.count()
+                occupied_room_days += rental_days * room_count
+        
+        # Tỷ lệ lấp đầy = (phòng-ngày đã thuê / tổng phòng-ngày có thể) * 100
+        occupancy_rate = (occupied_room_days / total_room_days * 100) if total_room_days > 0 else 0
         
         # Thống kê doanh thu theo tháng (6 tháng gần nhất)
         monthly_revenue = []

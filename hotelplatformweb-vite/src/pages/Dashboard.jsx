@@ -49,13 +49,6 @@ const Dashboard = () => {
       icon: <AnalyticsIcon />,
       color: 'warning.main',
       path: '/analytics'
-    },
-    {
-      title: 'Thanh Toán',
-      description: 'Quản lý thanh toán và hóa đơn',
-      icon: <PaymentIcon />,
-      color: 'info.main',
-      path: '/payments'
     }
   ];
 
