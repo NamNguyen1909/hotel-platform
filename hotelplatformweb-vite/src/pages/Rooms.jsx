@@ -328,33 +328,38 @@ const Rooms = () => {
                     <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'Inter' }}>
                       Tiện nghi: {room.room_type?.amenities || 'N/A'}
                     </Typography>
-                    <Button
-                      variant="contained"
-                      sx={{
-                        mt: 2,
-                        bgcolor: '#DAA520',
-                        '&:hover': { bgcolor: '#B8860B' },
-                        fontFamily: 'Inter',
-                      }}
-                      onClick={() => navigate(`/room/${room.id}`)}
-                    >
-                      Xem Chi Tiết
-                    </Button>
-                    {room.status === 'available' && (
+                    <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
                       <Button
                         variant="contained"
                         sx={{
-                          mt: 1,
-                          ml: 1,
-                          bgcolor: '#8B4513',
-                          '&:hover': { bgcolor: '#A0522D' },
+                          bgcolor: '#DAA520',
+                          '&:hover': { bgcolor: '#B8860B' },
                           fontFamily: 'Inter',
                         }}
-                        onClick={() => navigate('/book', { state: { roomId: room.id, checkInDate, checkOutDate, guestCount } })}
+                        onClick={() => navigate(`/rooms/${room.id}`)}
                       >
-                        Đặt Phòng Ngay
+                        Xem Chi Tiết
                       </Button>
-                    )}
+                      <Button
+                        variant="contained"
+                        sx={{
+                          bgcolor: room.status === 'available' ? '#8B4513' : '#A9A9A9',
+                          cursor: room.status === 'available' ? 'pointer' : 'not-allowed',
+                          '&:hover': {
+                            bgcolor: room.status === 'available' ? '#A0522D' : '#A9A9A9',
+                          },
+                          fontFamily: 'Inter',
+                        }}
+                        onClick={() => {
+                          if (room.status === 'available') {
+                            navigate('/book', { state: { roomId: room.id, checkInDate, checkOutDate, guestCount } });
+                          }
+                        }}
+                        disabled={room.status !== 'available'}
+                      >
+                        Đặt Phòng
+                      </Button>
+                    </Box>
                   </CardContent>
                 </Card>
               </Grid>

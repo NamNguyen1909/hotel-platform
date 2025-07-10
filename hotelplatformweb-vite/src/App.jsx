@@ -1,4 +1,3 @@
-
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -18,7 +17,7 @@ import CustomersManagement from './pages/CustomersManagement';
 import Bookings from './pages/Bookings';
 import Invoices from './pages/Invoices';
 import Analytics from './pages/Analytics';
-
+import RoomDetail from './pages/RoomDetail';
 
 // Component wrapper để check route và hiển thị header
 const AppContent = () => {
@@ -48,6 +47,7 @@ const AppContent = () => {
         <Route path="/staff/invoices" element={<Invoices />} />
 
         <Route path="/analytics" element={<Analytics />} />
+        <Route path="/rooms/:id" element={<RoomDetail />} />
 
         {/* Thêm các route khác nếu cần */}
       </Routes>
