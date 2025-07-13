@@ -53,6 +53,9 @@ import {
   Image as ImageIcon,
   Star as StarIcon,
   StarBorder as StarBorderIcon,
+  Search as SearchIcon,
+  Clear as ClearIcon,
+  FilterList as FilterIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import api, { endpoints, roomImageHelpers } from '../services/apis';
@@ -61,6 +64,7 @@ const RoomsManagement = () => {
   const navigate = useNavigate();
   const [rooms, setRooms] = useState([]);
   const [roomTypes, setRoomTypes] = useState([]);
+  const [allRoomTypes, setAllRoomTypes] = useState([]); // For filter dropdown
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [tabValue, setTabValue] = useState(0);
@@ -92,6 +96,11 @@ const RoomsManagement = () => {
     pageSize: 8,
     totalPages: 0
   });
+  
+  // Search states for rooms
+  const [roomSearchTerm, setRoomSearchTerm] = useState('');
+  const [roomStatusFilter, setRoomStatusFilter] = useState('');
+  const [roomTypeFilter, setRoomTypeFilter] = useState('');
   
   // Room states
   const [openAddModal, setOpenAddModal] = useState(false);
@@ -143,12 +152,13 @@ const RoomsManagement = () => {
   // Fetch rooms data
   useEffect(() => {
     fetchRoomsData();
+    fetchAllRoomTypes(); // Load all room types for filter dropdown
     fetchRoomTypesData();
   }, []);
 
   useEffect(() => {
     fetchRoomsData();
-  }, [roomsPagination.page]);
+  }, [roomsPagination.page, roomSearchTerm, roomStatusFilter, roomTypeFilter]);
 
   useEffect(() => {
     fetchRoomTypesData();
@@ -162,6 +172,19 @@ const RoomsManagement = () => {
         page: roomsPagination.page.toString(),
         page_size: roomsPagination.pageSize.toString()
       });
+      
+      // Add search parameters
+      if (roomSearchTerm.trim()) {
+        params.append('search', roomSearchTerm.trim());
+      }
+      
+      if (roomStatusFilter) {
+        params.append('status', roomStatusFilter);
+      }
+      
+      if (roomTypeFilter) {
+        params.append('room_type', roomTypeFilter);
+      }
       
       const roomsResponse = await api.get(`${endpoints.rooms.list}?${params.toString()}`);
       let roomsData = [];
@@ -194,6 +217,41 @@ const RoomsManagement = () => {
       setRooms([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAllRoomTypes = async () => {
+    try {
+      // Fetch all room types without pagination for filter dropdown
+      const response = await api.get(endpoints.roomTypes.list);
+      let allRoomTypesData = [];
+      
+      if (response.data) {
+        if (response.data.results) {
+          // If paginated, fetch all pages
+          allRoomTypesData = response.data.results;
+          let allPages = [];
+          const totalPages = response.data.total_pages || 1;
+          
+          for (let i = 1; i <= totalPages; i++) {
+            if (i === 1) {
+              allPages = [...allRoomTypesData];
+            } else {
+              const pageResponse = await api.get(`${endpoints.roomTypes.list}?page=${i}`);
+              if (pageResponse.data && pageResponse.data.results) {
+                allPages = [...allPages, ...pageResponse.data.results];
+              }
+            }
+          }
+          allRoomTypesData = allPages;
+        } else if (Array.isArray(response.data)) {
+          allRoomTypesData = response.data;
+        }
+      }
+      
+      setAllRoomTypes(allRoomTypesData);
+    } catch (err) {
+      console.error('Error fetching all room types:', err);
     }
   };
 
@@ -658,6 +716,41 @@ const RoomsManagement = () => {
     setRoomTypesPagination(prev => ({ ...prev, page: newPage }));
   };
 
+  // Search handlers
+  const handleRoomSearchChange = (value) => {
+    setRoomSearchTerm(value);
+    // Reset to page 1 when searching
+    setRoomsPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  const handleRoomStatusFilterChange = (value) => {
+    setRoomStatusFilter(value);
+    // Reset to page 1 when filtering
+    setRoomsPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  const handleRoomTypeFilterChange = (value) => {
+    setRoomTypeFilter(value);
+    // Reset to page 1 when filtering
+    setRoomsPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  const handleClearFilters = () => {
+    setRoomSearchTerm('');
+    setRoomStatusFilter('');
+    setRoomTypeFilter('');
+    setRoomsPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  // Debouncing for search
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      // Search will be triggered by the main useEffect
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [roomSearchTerm]);
+
   if (loading) {
     return (
       <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
@@ -710,55 +803,175 @@ const RoomsManagement = () => {
               </Button>
             </Box>
             
-            {/* Stats Cards */}
+            {/* Search and Stats Section */}
             <Grid container spacing={3} sx={{ mb: 3 }}>
-              <Grid item xs={12} sm={6} md={3}>
-                <Card>
-                  <CardContent>
-                    <Typography color="textSecondary" gutterBottom>
-                      Tổng số phòng
-                    </Typography>
-                    <Typography variant="h5" component="div">
-                      {roomStats.total_rooms}
-                    </Typography>
-                  </CardContent>
-                </Card>
+              {/* Search and Filters - Left Side */}
+              <Grid item xs={12} lg={5}>
+                <Paper sx={{ p: 3, height: 'fit-content' }}>
+                  <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
+                    <SearchIcon sx={{ mr: 1 }} />
+                    Tìm kiếm và lọc phòng
+                  </Typography>
+                  
+                  <Grid container spacing={2}>
+                    <Grid item xs={12}>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        placeholder="Tìm theo số phòng..."
+                        value={roomSearchTerm}
+                        onChange={(e) => handleRoomSearchChange(e.target.value)}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <SearchIcon />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </Grid>
+                    
+                    <Grid item xs={12} sm={6}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel>Trạng thái</InputLabel>
+                        <Select
+                          value={roomStatusFilter}
+                          onChange={(e) => handleRoomStatusFilterChange(e.target.value)}
+                          label="Trạng thái"
+                        >
+                          <MenuItem value="">Tất cả</MenuItem>
+                          <MenuItem value="available">Trống</MenuItem>
+                          <MenuItem value="booked">Đã đặt</MenuItem>
+                          <MenuItem value="occupied">Đang sử dụng</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                    
+                    <Grid item xs={12} sm={6}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel>Loại phòng</InputLabel>
+                        <Select
+                          value={roomTypeFilter}
+                          onChange={(e) => handleRoomTypeFilterChange(e.target.value)}
+                          label="Loại phòng"
+                        >
+                          <MenuItem value="">Tất cả</MenuItem>
+                          {allRoomTypes.map((type) => (
+                            <MenuItem key={type.id} value={type.id}>
+                              {type.name}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                    
+                    <Grid item xs={12}>
+                      <Button
+                        variant="outlined"
+                        startIcon={<ClearIcon />}
+                        onClick={handleClearFilters}
+                        fullWidth
+                        size="small"
+                        disabled={!roomSearchTerm && !roomStatusFilter && !roomTypeFilter}
+                      >
+                        Xóa bộ lọc
+                      </Button>
+                    </Grid>
+                  </Grid>
+                  
+                  {/* Active filters display */}
+                  {(roomSearchTerm || roomStatusFilter || roomTypeFilter) && (
+                    <Box sx={{ mt: 2 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                        Đang lọc:
+                      </Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        {roomSearchTerm && (
+                          <Chip
+                            label={`Tìm kiếm: "${roomSearchTerm}"`}
+                            size="small"
+                            onDelete={() => handleRoomSearchChange('')}
+                            color="primary"
+                            variant="outlined"
+                          />
+                        )}
+                        {roomStatusFilter && (
+                          <Chip
+                            label={`Trạng thái: ${roomStatusFilter === 'available' ? 'Trống' : 
+                                                  roomStatusFilter === 'booked' ? 'Đã đặt' : 'Đang sử dụng'}`}
+                            size="small"
+                            onDelete={() => handleRoomStatusFilterChange('')}
+                            color="primary"
+                            variant="outlined"
+                          />
+                        )}
+                        {roomTypeFilter && (
+                          <Chip
+                            label={`Loại: ${allRoomTypes.find(rt => rt.id.toString() === roomTypeFilter)?.name || ''}`}
+                            size="small"
+                            onDelete={() => handleRoomTypeFilterChange('')}
+                            color="primary"
+                            variant="outlined"
+                          />
+                        )}
+                      </Box>
+                    </Box>
+                  )}
+                </Paper>
               </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Card>
-                  <CardContent>
-                    <Typography color="textSecondary" gutterBottom>
-                      Phòng trống
-                    </Typography>
-                    <Typography variant="h5" component="div" color="success.main">
-                      {roomStats.available_rooms}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Card>
-                  <CardContent>
-                    <Typography color="textSecondary" gutterBottom>
-                      Phòng đã đặt
-                    </Typography>
-                    <Typography variant="h5" component="div" color="warning.main">
-                      {roomStats.booked_rooms}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Card>
-                  <CardContent>
-                    <Typography color="textSecondary" gutterBottom>
-                      Phòng đang sử dụng
-                    </Typography>
-                    <Typography variant="h5" component="div" color="error.main">
-                      {roomStats.occupied_rooms}
-                    </Typography>
-                  </CardContent>
-                </Card>
+
+              {/* Stats Cards - Right Side */}
+              <Grid item xs={12} lg={7}>
+                <Grid container spacing={2} sx={{ height: 'fit-content' }}>
+                  <Grid item xs={6} md={3}>
+                    <Card>
+                      <CardContent sx={{ textAlign: 'center', py: 2 }}>
+                        <Typography color="textSecondary" gutterBottom variant="body2">
+                          Tổng số phòng
+                        </Typography>
+                        <Typography variant="h4" component="div" fontWeight="bold">
+                          {roomStats.total_rooms}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                  <Grid item xs={6} md={3}>
+                    <Card>
+                      <CardContent sx={{ textAlign: 'center', py: 2 }}>
+                        <Typography color="textSecondary" gutterBottom variant="body2">
+                          Phòng trống
+                        </Typography>
+                        <Typography variant="h4" component="div" color="success.main" fontWeight="bold">
+                          {roomStats.available_rooms}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                  <Grid item xs={6} md={3}>
+                    <Card>
+                      <CardContent sx={{ textAlign: 'center', py: 2 }}>
+                        <Typography color="textSecondary" gutterBottom variant="body2">
+                          Phòng đã đặt
+                        </Typography>
+                        <Typography variant="h4" component="div" color="warning.main" fontWeight="bold">
+                          {roomStats.booked_rooms}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                  <Grid item xs={6} md={3}>
+                    <Card>
+                      <CardContent sx={{ textAlign: 'center', py: 2 }}>
+                        <Typography color="textSecondary" gutterBottom variant="body2">
+                          Đang sử dụng
+                        </Typography>
+                        <Typography variant="h4" component="div" color="error.main" fontWeight="bold">
+                          {roomStats.occupied_rooms}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                </Grid>
               </Grid>
             </Grid>
 
@@ -800,9 +1013,24 @@ const RoomsManagement = () => {
                     ) : rooms.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={5} align="center">
-                          <Typography variant="body1" color="textSecondary">
-                            Không có phòng nào
-                          </Typography>
+                          <Box sx={{ py: 4 }}>
+                            <Typography variant="body1" color="textSecondary" sx={{ mb: 1 }}>
+                              {(roomSearchTerm || roomStatusFilter || roomTypeFilter) 
+                                ? 'Không tìm thấy phòng nào phù hợp với bộ lọc'
+                                : 'Không có phòng nào'
+                              }
+                            </Typography>
+                            {(roomSearchTerm || roomStatusFilter || roomTypeFilter) && (
+                              <Button
+                                variant="outlined"
+                                size="small"
+                                onClick={handleClearFilters}
+                                startIcon={<ClearIcon />}
+                              >
+                                Xóa bộ lọc
+                              </Button>
+                            )}
+                          </Box>
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -865,6 +1093,7 @@ const RoomsManagement = () => {
                 <Typography variant="body2" color="text.secondary">
                   Hiển thị {((roomsPagination.page - 1) * roomsPagination.pageSize) + 1}-{Math.min(roomsPagination.page * roomsPagination.pageSize, roomsPagination.count)} 
                   trên {roomsPagination.count} phòng
+                  {(roomSearchTerm || roomStatusFilter || roomTypeFilter) && ' (đã lọc)'}
                 </Typography>
                 
                 <Pagination
@@ -1065,7 +1294,7 @@ const RoomsManagement = () => {
                               <IconButton 
                                 onClick={() => handleDeleteRoomType(roomType)} 
                                 color="error"
-                                disabled={rooms.some(room => room.room_type === roomType.id)}
+                                disabled={roomTypeStats.room_counts_by_type[roomType.id] > 0}
                               >
                                 <DeleteIcon />
                               </IconButton>
