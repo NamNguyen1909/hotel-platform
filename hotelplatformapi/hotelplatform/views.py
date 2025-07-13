@@ -475,7 +475,7 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
     serializer_class = BookingSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [SearchFilter, OrderingFilter]
-    search_fields = ['customer__full_name', 'customer__phone', 'id']
+    search_fields = ['customer__full_name', 'customer__phone', 'id', 'rooms__room_number', 'rooms__room_type__name']
     ordering_fields = ['check_in_date', 'check_out_date', 'created_at']
     ordering = ['-created_at']
 
@@ -495,6 +495,21 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         status_filter = self.request.query_params.get('status', None)
         if status_filter:
             queryset = queryset.filter(status=status_filter)
+        
+        # Filter by check_in_date
+        check_in_date = self.request.query_params.get('check_in_date', None)
+        if check_in_date:
+            queryset = queryset.filter(check_in_date__date=check_in_date)
+        
+        # Filter by search query (search bar)
+        search_query = self.request.query_params.get('search', None)
+        if search_query:
+            queryset = queryset.filter(
+                Q(customer__full_name__icontains=search_query) |
+                Q(customer__phone__icontains=search_query) |
+                Q(rooms__room_number__icontains=search_query) |
+                Q(rooms__room_type__name__icontains=search_query)
+            ).distinct()
         
         return queryset
 
@@ -520,14 +535,15 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
 
     def get_permissions(self):
         if self.action in ['create']:
-            return [CanManageBookings() | IsCustomerUser()]
+            return [CanManageOrIsCustomer()]
         elif self.action in ['update', 'partial_update']:
-            return [IsBookingOwner() | CanManageBookings()]
-        elif self.action in ['confirm', 'check_in']:
+            return [IsBookingOwnerOrCanManage()]
+        elif self.action in ['confirm', 'checkin']:
             return [CanConfirmBooking()]
         elif self.action in ['cancel']:
             return [CanCancelBooking()]
         return [IsAuthenticated()]
+
 
     @action(detail=True, methods=['post'])
     def confirm(self, request, pk=None):
@@ -561,6 +577,27 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
             room.save()
         
         return Response(BookingDetailSerializer(booking).data)
+
+    @action(detail=True, methods=['post'])
+    def checkin(self, request, pk=None):
+        """Check-in khách tại quầy (chỉ staff)"""
+        booking = get_object_or_404(Booking, pk=pk)
+        
+        if booking.status != BookingStatus.CONFIRMED:
+            return Response({"error": "Booking chưa được xác nhận hoặc đã check-in"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Lấy actual_guest_count từ request data nếu có
+        actual_guest_count = request.data.get('actual_guest_count', None)
+        try:
+            rental = booking.check_in(actual_guest_count=actual_guest_count)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            "message": "Check-in thành công",
+            "rental": RoomRentalDetailSerializer(rental).data,
+            "booking": BookingDetailSerializer(booking).data
+        })
 
 
 class RoomRentalViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
