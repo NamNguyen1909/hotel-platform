@@ -36,6 +36,8 @@ import {
   ImageListItem,
   ImageListItemBar,
   CardMedia,
+  Pagination,
+  Skeleton,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -62,6 +64,34 @@ const RoomsManagement = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [tabValue, setTabValue] = useState(0);
+  
+  // Statistics states
+  const [roomStats, setRoomStats] = useState({
+    total_rooms: 0,
+    available_rooms: 0,
+    booked_rooms: 0,
+    occupied_rooms: 0
+  });
+  
+  const [roomTypeStats, setRoomTypeStats] = useState({
+    total_room_types: 0,
+    room_counts_by_type: {}
+  });
+  
+  // Pagination states
+  const [roomsPagination, setRoomsPagination] = useState({
+    count: 0,
+    page: 1,
+    pageSize: 12,
+    totalPages: 0
+  });
+  
+  const [roomTypesPagination, setRoomTypesPagination] = useState({
+    count: 0,
+    page: 1,
+    pageSize: 8,
+    totalPages: 0
+  });
   
   // Room states
   const [openAddModal, setOpenAddModal] = useState(false);
@@ -112,47 +142,98 @@ const RoomsManagement = () => {
 
   // Fetch rooms data
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        
-        // Fetch rooms
-        const roomsResponse = await api.get(endpoints.rooms.list);
-        let roomsData = [];
-        if (roomsResponse.data) {
-          if (Array.isArray(roomsResponse.data)) {
-            roomsData = roomsResponse.data;
-          } else if (roomsResponse.data.results && Array.isArray(roomsResponse.data.results)) {
-            roomsData = roomsResponse.data.results;
-          }
-        }
-        
-        // Fetch room types
-        const roomTypesResponse = await api.get(endpoints.roomTypes.list);
-        let roomTypesData = [];
-        if (roomTypesResponse.data) {
-          if (Array.isArray(roomTypesResponse.data)) {
-            roomTypesData = roomTypesResponse.data;
-          } else if (roomTypesResponse.data.results && Array.isArray(roomTypesResponse.data.results)) {
-            roomTypesData = roomTypesResponse.data.results;
-          }
-        }
-        
-        setRooms(roomsData);
-        setRoomTypes(roomTypesData);
-        setError(null);
-      } catch (err) {
-        console.error('Error fetching data:', err);
-        setError('Không thể tải dữ liệu. Vui lòng thử lại sau.');
-        setRooms([]);
-        setRoomTypes([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
+    fetchRoomsData();
+    fetchRoomTypesData();
   }, []);
+
+  useEffect(() => {
+    fetchRoomsData();
+  }, [roomsPagination.page]);
+
+  useEffect(() => {
+    fetchRoomTypesData();
+  }, [roomTypesPagination.page]);
+
+  const fetchRoomsData = async () => {
+    try {
+      setLoading(true);
+      
+      const params = new URLSearchParams({
+        page: roomsPagination.page.toString(),
+        page_size: roomsPagination.pageSize.toString()
+      });
+      
+      const roomsResponse = await api.get(`${endpoints.rooms.list}?${params.toString()}`);
+      let roomsData = [];
+      
+      if (roomsResponse.data) {
+        if (roomsResponse.data.results) {
+          // Paginated response
+          roomsData = roomsResponse.data.results;
+          setRoomsPagination(prev => ({
+            ...prev,
+            count: roomsResponse.data.count,
+            totalPages: roomsResponse.data.total_pages
+          }));
+          
+          // Update stats if available
+          if (roomsResponse.data.stats) {
+            setRoomStats(roomsResponse.data.stats);
+          }
+        } else if (Array.isArray(roomsResponse.data)) {
+          // Non-paginated fallback
+          roomsData = roomsResponse.data;
+        }
+      }
+      
+      setRooms(roomsData);
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching rooms:', err);
+      setError('Không thể tải dữ liệu phòng. Vui lòng thử lại sau.');
+      setRooms([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchRoomTypesData = async () => {
+    try {
+      const params = new URLSearchParams({
+        page: roomTypesPagination.page.toString(),
+        page_size: roomTypesPagination.pageSize.toString()
+      });
+      
+      const roomTypesResponse = await api.get(`${endpoints.roomTypes.list}?${params.toString()}`);
+      let roomTypesData = [];
+      
+      if (roomTypesResponse.data) {
+        if (roomTypesResponse.data.results) {
+          // Paginated response
+          roomTypesData = roomTypesResponse.data.results;
+          setRoomTypesPagination(prev => ({
+            ...prev,
+            count: roomTypesResponse.data.count,
+            totalPages: roomTypesResponse.data.total_pages
+          }));
+          
+          // Update room type stats if available
+          if (roomTypesResponse.data.stats) {
+            setRoomTypeStats(roomTypesResponse.data.stats);
+          }
+        } else if (Array.isArray(roomTypesResponse.data)) {
+          // Non-paginated fallback
+          roomTypesData = roomTypesResponse.data;
+        }
+      }
+      
+      setRoomTypes(roomTypesData);
+    } catch (err) {
+      console.error('Error fetching room types:', err);
+      setError('Không thể tải dữ liệu loại phòng. Vui lòng thử lại sau.');
+      setRoomTypes([]);
+    }
+  };
 
   // Get status color
   const getStatusColor = (status) => {
@@ -229,16 +310,7 @@ const RoomsManagement = () => {
       }
       
       // Refresh rooms list
-      const roomsResponse = await api.get(endpoints.rooms.list);
-      let roomsData = [];
-      if (roomsResponse.data) {
-        if (Array.isArray(roomsResponse.data)) {
-          roomsData = roomsResponse.data;
-        } else if (roomsResponse.data.results && Array.isArray(roomsResponse.data.results)) {
-          roomsData = roomsResponse.data.results;
-        }
-      }
-      setRooms(roomsData);
+      await fetchRoomsData();
 
       // Close modal and reset form
       handleCloseAddModal();
@@ -417,16 +489,7 @@ const RoomsManagement = () => {
       }
       
       // Refresh room types list
-      const roomTypesResponse = await api.get(endpoints.roomTypes.list);
-      let roomTypesData = [];
-      if (roomTypesResponse.data) {
-        if (Array.isArray(roomTypesResponse.data)) {
-          roomTypesData = roomTypesResponse.data;
-        } else if (roomTypesResponse.data.results && Array.isArray(roomTypesResponse.data.results)) {
-          roomTypesData = roomTypesResponse.data.results;
-        }
-      }
-      setRoomTypes(roomTypesData);
+      await fetchRoomTypesData();
 
       // Close modal
       handleCloseRoomTypeModal();
@@ -456,16 +519,7 @@ const RoomsManagement = () => {
       await api.delete(endpoints.roomTypes.delete(roomTypeToDelete.id));
       
       // Refresh room types list
-      const roomTypesResponse = await api.get(endpoints.roomTypes.list);
-      let roomTypesData = [];
-      if (roomTypesResponse.data) {
-        if (Array.isArray(roomTypesResponse.data)) {
-          roomTypesData = roomTypesResponse.data;
-        } else if (roomTypesResponse.data.results && Array.isArray(roomTypesResponse.data.results)) {
-          roomTypesData = roomTypesResponse.data.results;
-        }
-      }
-      setRoomTypes(roomTypesData);
+      await fetchRoomTypesData();
       
       // Close confirmation dialog
       handleCloseDeleteConfirm();
@@ -549,16 +603,7 @@ const RoomsManagement = () => {
       await api.put(endpoints.rooms.update(selectedRoom.id), editRoomData);
       
       // Refresh rooms list
-      const roomsResponse = await api.get(endpoints.rooms.list);
-      let roomsData = [];
-      if (roomsResponse.data) {
-        if (Array.isArray(roomsResponse.data)) {
-          roomsData = roomsResponse.data;
-        } else if (roomsResponse.data.results && Array.isArray(roomsResponse.data.results)) {
-          roomsData = roomsResponse.data.results;
-        }
-      }
-      setRooms(roomsData);
+      await fetchRoomsData();
 
       // Close modal
       handleCloseEditModal();
@@ -584,16 +629,7 @@ const RoomsManagement = () => {
       await api.delete(endpoints.rooms.delete(selectedRoom.id));
       
       // Refresh rooms list
-      const roomsResponse = await api.get(endpoints.rooms.list);
-      let roomsData = [];
-      if (roomsResponse.data) {
-        if (Array.isArray(roomsResponse.data)) {
-          roomsData = roomsResponse.data;
-        } else if (roomsResponse.data.results && Array.isArray(roomsResponse.data.results)) {
-          roomsData = roomsResponse.data.results;
-        }
-      }
-      setRooms(roomsData);
+      await fetchRoomsData();
       
       // Close confirmation dialog
       handleCloseDeleteRoomConfirm();
@@ -611,6 +647,15 @@ const RoomsManagement = () => {
     setSelectedRoom(null);
     setRoomImages([]);
     setSelectedRoomForImages(null);
+  };
+
+  // Pagination handlers
+  const handleRoomsPageChange = (event, newPage) => {
+    setRoomsPagination(prev => ({ ...prev, page: newPage }));
+  };
+
+  const handleRoomTypesPageChange = (event, newPage) => {
+    setRoomTypesPagination(prev => ({ ...prev, page: newPage }));
   };
 
   if (loading) {
@@ -674,7 +719,7 @@ const RoomsManagement = () => {
                       Tổng số phòng
                     </Typography>
                     <Typography variant="h5" component="div">
-                      {rooms.length}
+                      {roomStats.total_rooms}
                     </Typography>
                   </CardContent>
                 </Card>
@@ -686,7 +731,7 @@ const RoomsManagement = () => {
                       Phòng trống
                     </Typography>
                     <Typography variant="h5" component="div" color="success.main">
-                      {rooms.filter(room => room.status === 'available').length}
+                      {roomStats.available_rooms}
                     </Typography>
                   </CardContent>
                 </Card>
@@ -698,7 +743,7 @@ const RoomsManagement = () => {
                       Phòng đã đặt
                     </Typography>
                     <Typography variant="h5" component="div" color="warning.main">
-                      {rooms.filter(room => room.status === 'booked').length}
+                      {roomStats.booked_rooms}
                     </Typography>
                   </CardContent>
                 </Card>
@@ -710,7 +755,7 @@ const RoomsManagement = () => {
                       Phòng đang sử dụng
                     </Typography>
                     <Typography variant="h5" component="div" color="error.main">
-                      {rooms.filter(room => room.status === 'occupied').length}
+                      {roomStats.occupied_rooms}
                     </Typography>
                   </CardContent>
                 </Card>
@@ -731,7 +776,28 @@ const RoomsManagement = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {rooms.length === 0 ? (
+                    {loading ? (
+                      // Loading skeleton rows
+                      Array.from({ length: roomsPagination.pageSize }).map((_, index) => (
+                        <TableRow key={index}>
+                          <TableCell>
+                            <Skeleton variant="text" width={80} />
+                          </TableCell>
+                          <TableCell>
+                            <Skeleton variant="text" width={120} />
+                          </TableCell>
+                          <TableCell>
+                            <Skeleton variant="text" width={150} />
+                          </TableCell>
+                          <TableCell>
+                            <Skeleton variant="rectangular" width={80} height={24} />
+                          </TableCell>
+                          <TableCell>
+                            <Skeleton variant="rectangular" width={150} height={32} />
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : rooms.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={5} align="center">
                           <Typography variant="body1" color="textSecondary">
@@ -792,6 +858,38 @@ const RoomsManagement = () => {
                 </Table>
               </TableContainer>
             </Paper>
+
+            {/* Rooms Pagination */}
+            {roomsPagination.totalPages > 1 && (
+              <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="body2" color="text.secondary">
+                  Hiển thị {((roomsPagination.page - 1) * roomsPagination.pageSize) + 1}-{Math.min(roomsPagination.page * roomsPagination.pageSize, roomsPagination.count)} 
+                  trên {roomsPagination.count} phòng
+                </Typography>
+                
+                <Pagination
+                  count={roomsPagination.totalPages}
+                  page={roomsPagination.page}
+                  onChange={handleRoomsPageChange}
+                  variant="outlined"
+                  shape="rounded"
+                  color="primary"
+                  size="medium"
+                  showFirstButton
+                  showLastButton
+                  sx={{ 
+                    '& .MuiPaginationItem-root': {
+                      borderRadius: '8px',
+                      margin: '0 2px',
+                    },
+                    '& .Mui-selected': {
+                      backgroundColor: 'primary.main !important',
+                      color: 'white',
+                    },
+                  }}
+                />
+              </Box>
+            )}
           </Box>
         )}
 
@@ -825,7 +923,7 @@ const RoomsManagement = () => {
                           Tổng loại phòng
                         </Typography>
                         <Typography variant="h5" component="div">
-                          {roomTypes.length}
+                          {roomTypeStats.total_room_types}
                         </Typography>
                       </Box>
                     </Box>
@@ -889,7 +987,34 @@ const RoomsManagement = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {roomTypes.length === 0 ? (
+                    {loading ? (
+                      // Loading skeleton rows
+                      Array.from({ length: roomTypesPagination.pageSize }).map((_, index) => (
+                        <TableRow key={index}>
+                          <TableCell>
+                            <Box>
+                              <Skeleton variant="text" width={150} />
+                              <Skeleton variant="text" width={200} />
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Skeleton variant="text" width={120} />
+                          </TableCell>
+                          <TableCell>
+                            <Skeleton variant="rectangular" width={80} height={24} />
+                          </TableCell>
+                          <TableCell>
+                            <Skeleton variant="text" width={40} />
+                          </TableCell>
+                          <TableCell>
+                            <Skeleton variant="text" width={60} />
+                          </TableCell>
+                          <TableCell>
+                            <Skeleton variant="rectangular" width={100} height={32} />
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : roomTypes.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} align="center">
                           <Typography variant="body1" color="textSecondary">
@@ -928,7 +1053,7 @@ const RoomsManagement = () => {
                             {roomType.extra_guest_surcharge}%
                           </TableCell>
                           <TableCell>
-                            {rooms.filter(room => room.room_type === roomType.id).length} phòng
+                            {roomTypeStats.room_counts_by_type[roomType.id] || 0} phòng
                           </TableCell>
                           <TableCell align="center">
                             <Tooltip title="Chỉnh sửa">
@@ -953,6 +1078,38 @@ const RoomsManagement = () => {
                 </Table>
               </TableContainer>
             </Paper>
+
+            {/* RoomTypes Pagination */}
+            {roomTypesPagination.totalPages > 1 && (
+              <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="body2" color="text.secondary">
+                  Hiển thị {((roomTypesPagination.page - 1) * roomTypesPagination.pageSize) + 1}-{Math.min(roomTypesPagination.page * roomTypesPagination.pageSize, roomTypesPagination.count)} 
+                  trên {roomTypesPagination.count} loại phòng
+                </Typography>
+                
+                <Pagination
+                  count={roomTypesPagination.totalPages}
+                  page={roomTypesPagination.page}
+                  onChange={handleRoomTypesPageChange}
+                  variant="outlined"
+                  shape="rounded"
+                  color="primary"
+                  size="medium"
+                  showFirstButton
+                  showLastButton
+                  sx={{ 
+                    '& .MuiPaginationItem-root': {
+                      borderRadius: '8px',
+                      margin: '0 2px',
+                    },
+                    '& .Mui-selected': {
+                      backgroundColor: 'primary.main !important',
+                      color: 'white',
+                    },
+                  }}
+                />
+              </Box>
+            )}
           </Box>
         )}
       </Box>
@@ -1867,9 +2024,8 @@ const RoomsManagement = () => {
               {selectedImages.length > 0 && (
                 <Box>
                   <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                    Ảnh đã chọn ({selectedImages.length})
+                    Ảnh đã chọn
                   </Typography>
-                  
                   <ImageList cols={4} rowHeight={120} sx={{ mb: 2 }}>
                     {selectedImages.map((file, index) => (
                       <ImageListItem key={index}>
@@ -1877,14 +2033,10 @@ const RoomsManagement = () => {
                           src={URL.createObjectURL(file)}
                           alt={file.name}
                           loading="lazy"
-                          style={{ 
-                            height: '120px', 
-                            objectFit: 'cover' 
-                          }}
+                          style={{ height: '120px', objectFit: 'cover' }}
                         />
                         <ImageListItemBar
-                          title={index === 0 ? 'Ảnh chính' : `Ảnh ${index + 1}`}
-                          subtitle={file.name}
+                          title={file.name}
                           actionIcon={
                             <IconButton
                               sx={{ color: 'rgba(255, 255, 255, 0.54)' }}
@@ -1894,23 +2046,6 @@ const RoomsManagement = () => {
                             </IconButton>
                           }
                         />
-                        {index === 0 && (
-                          <Box
-                            sx={{
-                              position: 'absolute',
-                              top: 8,
-                              left: 8,
-                              bgcolor: 'primary.main',
-                              color: 'white',
-                              borderRadius: 1,
-                              px: 1,
-                              py: 0.5,
-                              fontSize: '0.75rem'
-                            }}
-                          >
-                            Ảnh chính
-                          </Box>
-                        )}
                       </ImageListItem>
                     ))}
                   </ImageList>

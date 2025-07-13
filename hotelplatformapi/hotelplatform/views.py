@@ -41,6 +41,7 @@ from .permissions import (
     CanCheckOut, CanConfirmBooking, CanGenerateQRCode, CanUpdateProfile, CanCancelBooking,
     CanCreateNotification, CanModifyRoomType, CanManageCustomers, CanManageStaff
 )
+from .paginators import ItemPaginator, UserPaginator, RoomPaginator, RoomTypePaginator
 
 # Create your views here.
 def home(request):
@@ -56,6 +57,7 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = UserPaginator
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ['username', 'email', 'full_name', 'phone']
     ordering_fields = ['created_at', 'updated_at']
@@ -130,9 +132,27 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
     @action(detail=False, methods=['get'])
     def staff_list(self, request):
         """
-        Owner xem danh sách staff với thông tin đầy đủ
+        Owner xem danh sách staff với thông tin đầy đủ và phân trang
         """
         staff_users = User.objects.filter(role='staff').order_by('-created_at')
+        
+        # Áp dụng search filter
+        search = request.query_params.get('search', None)
+        if search:
+            staff_users = staff_users.filter(
+                Q(username__icontains=search) |
+                Q(email__icontains=search) |
+                Q(full_name__icontains=search) |
+                Q(phone__icontains=search)
+            )
+        
+        # Phân trang
+        paginator = UserPaginator()
+        page = paginator.paginate_queryset(staff_users, request)
+        if page is not None:
+            serializer = UserListSerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
+        
         serializer = UserListSerializer(staff_users, many=True)
         return Response(serializer.data)
 
@@ -223,9 +243,32 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
     @action(detail=False, methods=['get'])
     def customers_list(self, request):
         """
-        Admin/Owner/staff xem danh sách customers với thống kê
+        Admin/Owner/staff xem danh sách customers với thống kê và phân trang
         """
         customer_users = User.objects.filter(role='customer').order_by('-created_at')
+        
+        # Áp dụng search filter
+        search = request.query_params.get('search', None)
+        if search:
+            customer_users = customer_users.filter(
+                Q(username__icontains=search) |
+                Q(email__icontains=search) |
+                Q(full_name__icontains=search) |
+                Q(phone__icontains=search)
+            )
+        
+        # Filter theo customer type
+        customer_type = request.query_params.get('customer_type', None)
+        if customer_type:
+            customer_users = customer_users.filter(customer_type=customer_type)
+        
+        # Phân trang
+        paginator = UserPaginator()
+        page = paginator.paginate_queryset(customer_users, request)
+        if page is not None:
+            serializer = UserListSerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
+        
         serializer = UserListSerializer(customer_users, many=True)
         return Response(serializer.data)
 
@@ -236,6 +279,7 @@ class RoomTypeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveA
     queryset = RoomType.objects.all()
     serializer_class = RoomTypeSerializer
     permission_classes = [IsAuthenticated]  # Mặc định yêu cầu authentication
+    pagination_class = RoomTypePaginator
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ['name', 'description']
     ordering_fields = ['base_price', 'max_guests', 'created_at']
@@ -280,6 +324,7 @@ class RoomViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
     queryset = Room.objects.all()
     serializer_class = RoomSerializer
     permission_classes = [IsAuthenticated]  # Mặc định yêu cầu authentication
+    pagination_class = RoomPaginator
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ['room_number', 'room_type__name']
     ordering_fields = ['room_number', 'status', 'created_at']

@@ -31,7 +31,10 @@ import {
   Grid,
   Divider,
   Stack,
-  InputAdornment
+  InputAdornment,
+  Pagination,
+  TablePagination,
+  Skeleton
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -63,10 +66,19 @@ const UserList = ({
   const [users, setUsers] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
   
+  // States for pagination
+  const [pagination, setPagination] = useState({
+    count: 0,
+    page: 1,
+    pageSize: 15,
+    totalPages: 0
+  });
+  
   // States for UI
   const [loading, setLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [customerTypeFilter, setCustomerTypeFilter] = useState('');
   
   // States for modals
   const [openAddEdit, setOpenAddEdit] = useState(false);
@@ -97,21 +109,48 @@ const UserList = ({
   // Load users on component mount
   useEffect(() => {
     loadUsers();
-  }, [userType]);
+  }, [userType, pagination.page, searchTerm, customerTypeFilter]);
 
-  // Filter users when search term changes
-  useEffect(() => {
-    filterUsers();
-  }, [users, searchTerm]);
+  // Remove the old filterUsers useEffect since we'll do server-side filtering
+  // useEffect(() => {
+  //   filterUsers();
+  // }, [users, searchTerm]);
 
   const loadUsers = async () => {
     setLoading(true);
     try {
       const endpoint = userType === 'staff' ? endpoints.users.staffslist : endpoints.users.customersList;
       console.log('Calling API:', endpoint);
-      const response = await api.get(endpoint);
+      
+      // Build query parameters
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        page_size: pagination.pageSize.toString()
+      });
+      
+      if (searchTerm.trim()) {
+        params.append('search', searchTerm.trim());
+      }
+      
+      if (customerTypeFilter && userType === 'customer') {
+        params.append('customer_type', customerTypeFilter);
+      }
+      
+      const response = await api.get(`${endpoint}?${params.toString()}`);
       console.log('API response:', response.data);
-      setUsers(response.data);
+      
+      // Handle paginated response
+      if (response.data.results) {
+        setUsers(response.data.results);
+        setPagination(prev => ({
+          ...prev,
+          count: response.data.count,
+          totalPages: response.data.total_pages
+        }));
+      } else {
+        // Fallback for non-paginated response
+        setUsers(response.data);
+      }
     } catch (error) {
       console.error(`Error loading ${userType}s:`, error);
       showAlert('error', `Lỗi khi tải danh sách ${userType === 'staff' ? 'nhân viên' : 'khách hàng'}`);
@@ -120,21 +159,22 @@ const UserList = ({
     }
   };
 
-  const filterUsers = () => {
-    let filtered = users;
+  // Remove the old filterUsers function since we do server-side filtering now
+  // const filterUsers = () => {
+  //   let filtered = users;
 
-    if (searchTerm.trim()) {
-      filtered = filtered.filter(user =>
-        user.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.phone?.includes(searchTerm) ||
-        user.id_card?.includes(searchTerm)
-      );
-    }
+  //   if (searchTerm.trim()) {
+  //     filtered = filtered.filter(user =>
+  //       user.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  //       user.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  //       user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  //       user.phone?.includes(searchTerm) ||
+  //       user.id_card?.includes(searchTerm)
+  //     );
+  //   }
 
-    setFilteredUsers(filtered);
-  };
+  //   setFilteredUsers(filtered);
+  // };
 
   const showAlert = (type, message) => {
     setAlert({ open: true, type, message });
@@ -143,6 +183,28 @@ const UserList = ({
   const handleCloseAlert = () => {
     setAlert({ ...alert, open: false });
   };
+
+  // Pagination handlers
+  const handlePageChange = (event, newPage) => {
+    setPagination(prev => ({ ...prev, page: newPage }));
+  };
+
+  const handlePageSizeChange = (event) => {
+    setPagination(prev => ({ 
+      ...prev, 
+      pageSize: event.target.value,
+      page: 1 // Reset to first page when changing page size
+    }));
+  };
+
+  // Search with debouncing
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page when searching
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, customerTypeFilter]);
 
   const resetForm = () => {
     setFormData({
@@ -368,7 +430,7 @@ const UserList = ({
       <Card sx={{ mb: 3 }}>
         <CardContent>
           <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} md={6}>
+            <Grid item xs={12} md={showCustomerType ? 4 : 6}>
               <TextField
                 fullWidth
                 placeholder="Tìm kiếm theo tên, email, số điện thoại, CMND..."
@@ -385,9 +447,27 @@ const UserList = ({
                 size="small"
               />
             </Grid>
-            <Grid item xs={12} md={6}>
+            {showCustomerType && (
+              <Grid item xs={12} md={4}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Loại khách hàng</InputLabel>
+                  <Select
+                    value={customerTypeFilter}
+                    label="Loại khách hàng"
+                    onChange={(e) => setCustomerTypeFilter(e.target.value)}
+                  >
+                    <MenuItem value="">Tất cả</MenuItem>
+                    <MenuItem value="new">Khách mới</MenuItem>
+                    <MenuItem value="regular">Khách thường</MenuItem>
+                    <MenuItem value="vip">VIP</MenuItem>
+                    <MenuItem value="super_vip">Super VIP</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+            )}
+            <Grid item xs={12} md={showCustomerType ? 4 : 6}>
               <Typography variant="body2" color="text.secondary" sx={{ textAlign: { xs: 'left', md: 'right' } }}>
-                Tổng số {userType === 'staff' ? 'nhân viên' : 'khách hàng'}: <strong>{filteredUsers.length}</strong>
+                Tổng số {userType === 'staff' ? 'nhân viên' : 'khách hàng'}: <strong>{pagination.count || 0}</strong>
               </Typography>
             </Grid>
           </Grid>
@@ -427,15 +507,38 @@ const UserList = ({
               </TableHead>
               <TableBody>
                 {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={showCustomerType && showStats ? 6 : showCustomerType || showStats ? 5 : 4} sx={{ textAlign: 'center', py: 4 }}>
-                      <CircularProgress />
-                      <Typography variant="body2" sx={{ mt: 2 }}>
-                        Đang tải danh sách {userType === 'staff' ? 'nhân viên' : 'khách hàng'}...
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                ) : filteredUsers.length === 0 ? (
+                  // Loading skeleton rows
+                  Array.from({ length: pagination.pageSize }).map((_, index) => (
+                    <TableRow key={index}>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Skeleton variant="circular" width={40} height={40} />
+                          <Box>
+                            <Skeleton variant="text" width={120} />
+                            <Skeleton variant="text" width={80} />
+                          </Box>
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton variant="text" width={150} />
+                        <Skeleton variant="text" width={100} />
+                      </TableCell>
+                      {showCustomerType && (
+                        <TableCell>
+                          <Skeleton variant="rectangular" width={60} height={24} />
+                        </TableCell>
+                      )}
+                      {showStats && (
+                        <TableCell>
+                          <Skeleton variant="text" width={80} />
+                        </TableCell>
+                      )}
+                      <TableCell>
+                        <Skeleton variant="rectangular" width={100} height={32} />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : users.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={showCustomerType && showStats ? 6 : showCustomerType || showStats ? 5 : 4} sx={{ textAlign: 'center', py: 4 }}>
                       <Typography variant="body1" color="text.secondary">
@@ -444,7 +547,7 @@ const UserList = ({
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredUsers.map((user) => (
+                  users.map((user) => (
                     <TableRow key={user.id} hover>
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -546,6 +649,46 @@ const UserList = ({
               </TableBody>
             </Table>
           </TableContainer>
+          
+          {/* Pagination */}
+          {pagination.totalPages > 1 && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 2, borderTop: 1, borderColor: 'divider' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Hiển thị:
+                </Typography>
+                <Select
+                  size="small"
+                  value={pagination.pageSize}
+                  onChange={handlePageSizeChange}
+                  sx={{ minWidth: 80 }}
+                >
+                  <MenuItem value={10}>10</MenuItem>
+                  <MenuItem value={15}>15</MenuItem>
+                  <MenuItem value={25}>25</MenuItem>
+                  <MenuItem value={50}>50</MenuItem>
+                </Select>
+                <Typography variant="body2" color="text.secondary">
+                  / trang
+                </Typography>
+              </Box>
+              
+              <Pagination
+                count={pagination.totalPages}
+                page={pagination.page}
+                onChange={handlePageChange}
+                color="primary"
+                shape="rounded"
+                showFirstButton
+                showLastButton
+              />
+              
+              <Typography variant="body2" color="text.secondary">
+                {((pagination.page - 1) * pagination.pageSize) + 1}-{Math.min(pagination.page * pagination.pageSize, pagination.count)} 
+                trên {pagination.count}
+              </Typography>
+            </Box>
+          )}
         </CardContent>
       </Card>
 
