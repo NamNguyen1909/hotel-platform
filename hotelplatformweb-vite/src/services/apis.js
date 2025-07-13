@@ -47,15 +47,16 @@ api.interceptors.response.use(
           originalRequest.headers.Authorization = `Bearer ${access}`;
           return api(originalRequest);
         } catch (refreshError) {
-          // Refresh failed, redirect to login
+          // Refresh failed, clear tokens but don't auto-redirect
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
-          window.location.href = '/login';
+          // Let the component handle the error and decide what to do
           return Promise.reject(refreshError);
         }
       } else {
-        // No refresh token, redirect to login
-        window.location.href = '/login';
+        // No refresh token, but don't auto-redirect
+        // Some endpoints are public and 401 is expected for non-authenticated users
+        return Promise.reject(error);
       }
     }
     

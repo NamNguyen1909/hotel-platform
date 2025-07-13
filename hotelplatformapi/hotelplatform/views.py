@@ -235,16 +235,18 @@ class RoomTypeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveA
     """
     queryset = RoomType.objects.all()
     serializer_class = RoomTypeSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated]  # Mặc định yêu cầu authentication
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ['name', 'description']
     ordering_fields = ['base_price', 'max_guests', 'created_at']
     ordering = ['base_price']
 
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        if self.action in ['list', 'retrieve']:
+            return [AllowAny()]  # Chỉ cho phép guest xem danh sách và chi tiết
+        elif self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [CanModifyRoomType()]
-        return [IsAuthenticated()]
+        return [IsAuthenticated()]  # Các action khác cần authentication
 
     def create(self, request):
         """
@@ -277,7 +279,7 @@ class RoomViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
     """
     queryset = Room.objects.all()
     serializer_class = RoomSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated]  # Mặc định yêu cầu authentication
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ['room_number', 'room_type__name']
     ordering_fields = ['room_number', 'status', 'created_at']
@@ -290,11 +292,13 @@ class RoomViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
         return RoomSerializer
 
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update']:
+        if self.action in ['list', 'retrieve', 'available']:
+            return [AllowAny()]  # Chỉ cho phép guest xem danh sách, chi tiết và phòng trống
+        elif self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [CanManageRooms()]
         elif self.action == 'low_performance':
             return [CanViewStats()]
-        return [IsAuthenticated()]
+        return [IsAuthenticated()]  # Các action khác cần authentication
 
     def get_queryset(self):
         queryset = Room.objects.select_related('room_type').all()
@@ -1158,7 +1162,9 @@ class RoomImageViewSet(viewsets.ViewSet, generics.ListAPIView, generics.Retrieve
     ordering = ['-is_primary', '-created_at']
 
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy', 'set_primary']:
+        if self.action in ['list', 'retrieve', 'by_room']:
+            return [AllowAny()]  # Cho phép guest xem ảnh phòng
+        elif self.action in ['create', 'update', 'partial_update', 'destroy', 'set_primary']:
             return [CanManageRooms()]
         return [IsAuthenticated()]
 

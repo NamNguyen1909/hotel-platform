@@ -17,12 +17,13 @@ import {
   VisibilityOff,
   Login as LoginIcon
 } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import api, { endpoints } from '../services/apis';
 import authUtils from '../services/auth';
 
 const Login = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [formData, setFormData] = useState({
     username: '',
     password: ''
@@ -78,24 +79,38 @@ const Login = () => {
       const userInfo = await authUtils.getCurrentUser();
       const userRole = userInfo?.role;
 
-      // Navigate based on user role
-    // Navigate based on user role
-    switch (userRole) {
-      case 'owner':
-        navigate('/dashboard');
-        break;
-      case 'admin':
-        navigate('/dashboard'); // hoặc trang khác
-        break;
-      case 'staff':
-        navigate('/rooms'); // hoặc trang khác
-        break;
-      case 'customer':
-        navigate('/'); // home page
-        break;
-      default:
-        navigate('/');
-    }
+      // Check if there's redirect information from booking attempt
+      const redirectState = location.state;
+      
+      if (redirectState && redirectState.from === '/book') {
+        // User was trying to book a room, redirect to booking page
+        navigate('/book', { 
+          state: { 
+            roomId: redirectState.roomId, 
+            checkInDate: redirectState.checkInDate, 
+            checkOutDate: redirectState.checkOutDate, 
+            guestCount: redirectState.guestCount 
+          } 
+        });
+      } else {
+        // Normal role-based navigation
+        switch (userRole) {
+          case 'owner':
+            navigate('/dashboard');
+            break;
+          case 'admin':
+            navigate('/dashboard');
+            break;
+          case 'staff':
+            navigate('/rooms');
+            break;
+          case 'customer':
+            navigate('/');
+            break;
+          default:
+            navigate('/');
+        }
+      }
       
     } catch (err) {
       console.error('Login error:', err);

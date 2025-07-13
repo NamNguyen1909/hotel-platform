@@ -23,6 +23,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { Search as SearchIcon } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/apis';
+import authUtils from '../services/auth';
 import vi from 'date-fns/locale/vi';
 import { format } from 'date-fns';
 
@@ -352,7 +353,29 @@ const Rooms = () => {
                         }}
                         onClick={() => {
                           if (room.status === 'available') {
-                            navigate('/book', { state: { roomId: room.id, checkInDate, checkOutDate, guestCount } });
+                            // Kiểm tra đăng nhập khi đặt phòng
+                            if (!authUtils.isAuthenticated()) {
+                              // Chuyển đến trang đăng nhập với redirect về trang đặt phòng
+                              navigate('/login', { 
+                                state: { 
+                                  from: '/book',
+                                  roomId: room.id, 
+                                  checkInDate, 
+                                  checkOutDate, 
+                                  guestCount 
+                                } 
+                              });
+                            } else {
+                              // Đã đăng nhập, chuyển thẳng đến trang đặt phòng
+                              navigate('/book', { 
+                                state: { 
+                                  roomId: room.id, 
+                                  checkInDate, 
+                                  checkOutDate, 
+                                  guestCount 
+                                } 
+                              });
+                            }
                           }
                         }}
                         disabled={room.status !== 'available'}
