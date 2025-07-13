@@ -74,8 +74,8 @@ const menuItemsByRole = {
   ],
   guest: [
     { text: 'Trang chủ', icon: <Home />, path: '/' },
-    { text: 'Đăng nhập', icon: <Login />, path: '/login' },
-    { text: 'Đăng ký', icon: <PersonAdd />, path: '/register' },
+    // { text: 'Đăng nhập', icon: <Login />, path: '/login' },
+    // { text: 'Đăng ký', icon: <PersonAdd />, path: '/register' },
   ],
 };
 
