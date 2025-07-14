@@ -45,7 +45,13 @@ const Analytics = () => {
     occupancyRate: 0,
     monthlyRevenue: [],
     topRooms: [],
-    recentBookings: []
+    recentBookings: [],
+    trends: {
+      revenueTrend: 0,
+      bookingsTrend: 0,
+      customersTrend: 0,
+      occupancyTrend: 0
+    }
   });
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -59,6 +65,22 @@ const Analytics = () => {
     { value: 7, label: 'Tháng 7' }, { value: 8, label: 'Tháng 8' }, { value: 9, label: 'Tháng 9' },
     { value: 10, label: 'Tháng 10' }, { value: 11, label: 'Tháng 11' }, { value: 12, label: 'Tháng 12' }
   ];
+
+  // Helper function to format trend value
+  const formatTrend = (trend) => {
+    if (trend === 0) return '0.0%';
+    return `${trend > 0 ? '+' : ''}${trend.toFixed(1)}%`;
+  };
+
+  // Helper function to get trend color based on value
+  const getTrendColor = (trend, isPositiveBetter = true) => {
+    if (trend === 0) return 'text.secondary';
+    if (isPositiveBetter) {
+      return trend > 0 ? 'success.main' : 'error.main';
+    } else {
+      return trend > 0 ? 'error.main' : 'success.main';
+    }
+  };
 
   useEffect(() => {
     loadStats();
@@ -115,44 +137,52 @@ const Analytics = () => {
     return new Date(dateString).toLocaleDateString('vi-VN');
   };
 
-  const StatCard = ({ title, value, icon, color, trend, trendValue, tooltip }) => (
-    <Card sx={{ height: '100%', background: `linear-gradient(135deg, ${color}20 0%, ${color}10 100%)` }}>
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-          <Box sx={{ 
-            p: 1.5, 
-            borderRadius: 2, 
-            backgroundColor: color + '20',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            {React.cloneElement(icon, { sx: { color: color, fontSize: 32 } })}
+  const StatCard = ({ title, value, icon, color, trendValue, tooltip }) => {
+    const trend = trendValue && trendValue !== 0 ? (trendValue > 0 ? 'up' : 'down') : null;
+    
+    return (
+      <Card sx={{ height: '100%', background: `linear-gradient(135deg, ${color}20 0%, ${color}10 100%)` }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+            <Box sx={{ 
+              p: 1.5, 
+              borderRadius: 2, 
+              backgroundColor: color + '20',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              {React.cloneElement(icon, { sx: { color: color, fontSize: 32 } })}
+            </Box>
+            {trend && (
+              <Chip
+                size="small"
+                icon={trend === 'up' ? <TrendingUpIcon /> : <TrendingDownIcon />}
+                label={formatTrend(trendValue)}
+                color={trend === 'up' ? 'success' : 'error'}
+                variant="outlined"
+                sx={{ 
+                  fontWeight: 'bold',
+                  '& .MuiChip-label': { fontSize: '0.75rem' }
+                }}
+              />
+            )}
           </Box>
-          {trend && (
-            <Chip
-              size="small"
-              icon={trend === 'up' ? <TrendingUpIcon /> : <TrendingDownIcon />}
-              label={`${trendValue || 0}%`}
-              color={trend === 'up' ? 'success' : 'error'}
-              variant="outlined"
-            />
-          )}
-        </Box>
-        <Typography variant="h4" sx={{ fontWeight: 'bold', color: color, mb: 1 }}>
-          {value}
-        </Typography>
-        <Typography variant="body2" color="text.secondary" title={tooltip}>
-          {title}
-          {tooltip && (
-            <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontStyle: 'italic' }}>
-              💡 {tooltip}
-            </Typography>
-          )}
-        </Typography>
-      </CardContent>
-    </Card>
-  );
+          <Typography variant="h4" sx={{ fontWeight: 'bold', color: color, mb: 1 }}>
+            {value}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" title={tooltip}>
+            {title}
+            {tooltip && (
+              <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontStyle: 'italic' }}>
+                💡 {tooltip}
+              </Typography>
+            )}
+          </Typography>
+        </CardContent>
+      </Card>
+    );
+  };
 
   // Simple chart component using CSS
   const SimpleBarChart = ({ data, height = 350 }) => {
@@ -368,8 +398,7 @@ const Analytics = () => {
             value={formatCurrency(statsData.totalRevenue || 0)}
             icon={<MoneyIcon />}
             color="#2E8B57"
-            trend={statsData.totalRevenue > 0 ? "up" : null}
-            trendValue={statsData.totalRevenue > 0 ? "12.5" : null}
+            trendValue={statsData.trends?.revenueTrend || 0}
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
@@ -378,8 +407,7 @@ const Analytics = () => {
             value={statsData.totalBookings || 0}
             icon={<BookingIcon />}
             color="#FF8C00"
-            trend={statsData.totalBookings > 0 ? "up" : null}
-            trendValue={statsData.totalBookings > 0 ? "8.3" : null}
+            trendValue={statsData.trends?.bookingsTrend || 0}
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
@@ -388,8 +416,7 @@ const Analytics = () => {
             value={statsData.totalCustomers || 0}
             icon={<PeopleIcon />}
             color="#8B4513"
-            trend={statsData.totalCustomers > 0 ? "up" : null}
-            trendValue={statsData.totalCustomers > 0 ? "15.2" : null}
+            trendValue={statsData.trends?.customersTrend || 0}
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
@@ -398,8 +425,7 @@ const Analytics = () => {
             value={`${statsData.occupancyRate || 0}%`}
             icon={<HotelIcon />}
             color="#DAA520"
-            trend={statsData.occupancyRate > 50 ? "up" : statsData.occupancyRate > 0 ? "down" : null}
-            trendValue={statsData.occupancyRate > 0 ? "2.1" : null}
+            trendValue={statsData.trends?.occupancyTrend || 0}
           />
         </Grid>
       </Grid>
