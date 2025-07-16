@@ -254,7 +254,7 @@ class CanUpdateProfile(permissions.BasePermission):
         return obj == request.user
 
 
-class CanCancelBooking(permissions.BasePermission):
+class CanCancelUpdateBooking(permissions.BasePermission):
     """
     Quyền hủy booking
     """

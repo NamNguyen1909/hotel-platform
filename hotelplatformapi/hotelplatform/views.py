@@ -38,7 +38,7 @@ from .permissions import (
     IsAdminUser, IsOwnerUser, IsStaffUser, IsCustomerUser, IsAdminOrOwner, IsAdminOrOwnerOrStaff,
     IsBookingOwner, IsRoomRentalOwner, IsPaymentOwner, IsNotificationOwner, CanManageRooms,
     CanManageBookings, CanManagePayments, CanCreateDiscountCode, CanViewStats, CanCheckIn,
-    CanCheckOut, CanConfirmBooking, CanGenerateQRCode, CanUpdateProfile, CanCancelBooking,
+    CanCheckOut, CanConfirmBooking, CanGenerateQRCode, CanUpdateProfile, CanCancelUpdateBooking,
     CanCreateNotification, CanModifyRoomType, CanManageCustomers, CanManageStaff
 )
 from .paginators import ItemPaginator, UserPaginator, RoomPaginator, RoomTypePaginator
@@ -513,6 +513,13 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         
         return queryset
 
+    def get_permissions(self):
+        if self.action in ['confirm', 'checkin']:
+            return [CanConfirmBooking()]
+        elif self.action in ['cancel', 'update', 'partial_update']:
+            return [CanCancelUpdateBooking()]
+        return [IsAuthenticated()]
+
     def create(self, request):
         """Tạo booking mới"""
         serializer = BookingSerializer(data=request.data, context={'request': request})
@@ -532,17 +539,6 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
             booking = serializer.save()
             return Response(BookingDetailSerializer(booking).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    # def get_permissions(self):
-    #     if self.action in ['create']:
-    #         return [CanManageOrIsCustomer()]
-    #     elif self.action in ['update', 'partial_update']:
-    #         return [IsBookingOwnerOrCanManage()]
-    #     elif self.action in ['confirm', 'checkin']:
-    #         return [CanConfirmBooking()]
-    #     elif self.action in ['cancel']:
-    #         return [CanCancelBooking()]
-    #     return [IsAuthenticated()]
 
 
     @action(detail=True, methods=['post'])
