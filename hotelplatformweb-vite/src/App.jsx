@@ -20,6 +20,8 @@ import Bookings from './pages/Bookings';
 import Invoices from './pages/Invoices';
 import Analytics from './pages/Analytics';
 import RoomDetail from './pages/RoomDetail';
+import BookingForm from './pages/BookingForm';
+import InvoiceDetail from './pages/InvoiceDetail';
 
 // Component wrapper để check route và hiển thị header/footer
 const AppContent = () => {
@@ -55,6 +57,9 @@ const AppContent = () => {
 
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/rooms/:id" element={<RoomDetail />} />
+
+          <Route path="/book" element={<BookingForm />} />
+          <Route path="/invoice/:id" element={<InvoiceDetail />} />
 
           {/* Thêm các route khác nếu cần */}
         </Routes>

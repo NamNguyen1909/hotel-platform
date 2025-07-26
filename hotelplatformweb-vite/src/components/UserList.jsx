@@ -49,8 +49,7 @@ import {
   CheckCircle as ActivateIcon,
   Star as StarIcon,
   MonetizationOn as MoneyIcon,
-  People as PeopleIcon,
-  AdminPanelSettings as AdminIcon
+  People as PeopleIcon
 } from '@mui/icons-material';
 import api, { endpoints } from '../services/apis';
 
@@ -75,7 +74,7 @@ const UserList = ({
   });
   
   // States for UI
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [customerTypeFilter, setCustomerTypeFilter] = useState('');
@@ -111,10 +110,30 @@ const UserList = ({
     loadUsers();
   }, [userType, pagination.page, searchTerm, customerTypeFilter]);
 
-  // Remove the old filterUsers useEffect since we'll do server-side filtering
-  // useEffect(() => {
-  //   filterUsers();
-  // }, [users, searchTerm]);
+  // Manage inert attribute for accessibility when modals are open
+  useEffect(() => {
+    const rootElement = document.getElementById('root');
+    if (openAddEdit || openView || openToggleActive) {
+      // Add inert to #root when any modal is open
+      if (rootElement) {
+        rootElement.setAttribute('inert', '');
+        rootElement.removeAttribute('aria-hidden'); // Remove aria-hidden to avoid conflicts
+      }
+    } else {
+      // Remove inert when modals are closed
+      if (rootElement) {
+        rootElement.removeAttribute('inert');
+      }
+    }
+
+    return () => {
+      // Cleanup on unmount
+      if (rootElement) {
+        rootElement.removeAttribute('inert');
+        rootElement.removeAttribute('aria-hidden');
+      }
+    };
+  }, [openAddEdit, openView, openToggleActive]);
 
   const loadUsers = async () => {
     setLoading(true);
@@ -158,23 +177,6 @@ const UserList = ({
       setLoading(false);
     }
   };
-
-  // Remove the old filterUsers function since we do server-side filtering now
-  // const filterUsers = () => {
-  //   let filtered = users;
-
-  //   if (searchTerm.trim()) {
-  //     filtered = filtered.filter(user =>
-  //       user.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-  //       user.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-  //       user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-  //       user.phone?.includes(searchTerm) ||
-  //       user.id_card?.includes(searchTerm)
-  //     );
-  //   }
-
-  //   setFilteredUsers(filtered);
-  // };
 
   const showAlert = (type, message) => {
     setAlert({ open: true, type, message });
@@ -274,7 +276,7 @@ const UserList = ({
 
       if (editMode) {
         await api.put(endpoints.users.update(currentUser.id), dataToSubmit);
-        showAlert('success', `Cập nhật ${userType === 'staff' ? 'nhân viên' : 'khách hàng'} thành công`);
+        showAlert('success', `Cập nhật ${userType === 'staff' ? 'nhân viên thành công' : 'khách hàng thành công'}`);
       } else {
         const endpoint = userType === 'staff' ? endpoints.users.createStaff : endpoints.users.create;
         await api.post(endpoint, dataToSubmit);
@@ -287,7 +289,7 @@ const UserList = ({
       console.error(`Error submitting ${userType}:`, error);
       const errorMessage = error.response?.data?.detail || 
                           error.response?.data?.message || 
-                          error.response?.data?.error ||
+                          error.response?.data?.error || 
                           'Có lỗi xảy ra';
       showAlert('error', errorMessage);
     } finally {
@@ -699,7 +701,7 @@ const UserList = ({
         maxWidth="md"
         fullWidth
       >
-        <DialogTitle sx={{ pb: 1 }}>
+        <DialogTitle component="div" sx={{ pb: 1 }}>
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
             {editMode ? `Chỉnh sửa ${userType === 'staff' ? 'nhân viên' : 'khách hàng'}` : `Thêm ${userType === 'staff' ? 'nhân viên' : 'khách hàng'} mới`}
           </Typography>
@@ -708,6 +710,7 @@ const UserList = ({
           <Grid container spacing={2} sx={{ mt: 1 }}>
             <Grid item xs={12} md={6}>
               <TextField
+                autoFocus
                 fullWidth
                 label="Tên đăng nhập"
                 value={formData.username}
@@ -814,7 +817,7 @@ const UserList = ({
         maxWidth="md"
         fullWidth
       >
-        <DialogTitle>
+        <DialogTitle component="div">
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
             Thông tin chi tiết {userType === 'staff' ? 'nhân viên' : 'khách hàng'}
           </Typography>
@@ -904,7 +907,7 @@ const UserList = ({
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>
+        <DialogTitle component="div">
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
             {currentUser?.is_active ? `Vô hiệu hóa ${userType === 'staff' ? 'nhân viên' : 'khách hàng'}` : `Kích hoạt ${userType === 'staff' ? 'nhân viên' : 'khách hàng'}`}
           </Typography>

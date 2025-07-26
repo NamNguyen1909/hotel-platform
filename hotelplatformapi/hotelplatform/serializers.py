@@ -131,6 +131,48 @@ class UserSerializer(ModelSerializer):
         fields = ['id', 'username', 'email', 'password', 'full_name', 'phone', 'id_card', 'address', 'role', 'avatar', 'is_staff', 'is_active']
         read_only_fields = ['id', 'is_staff', 'is_active']
 
+    def validate_password(self, value):
+        if len(value) < 8:
+            raise serializers.ValidationError("Mật khẩu phải dài ít nhất 8 ký tự.")
+        return value
+
+    def create(self, validated_data):
+        password = validated_data.pop('password')
+        avatar = validated_data.pop('avatar', None)
+        # Loại bỏ các trường không thể chỉnh sửa
+        validated_data.pop('is_active', None)
+        validated_data.pop('customer_type', None)
+        user = User(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            full_name=validated_data.get('full_name'),
+            phone=validated_data.get('phone'),
+            id_card=validated_data.get('id_card'),
+            address=validated_data.get('address'),
+            role=validated_data.get('role', 'customer'),
+        )
+        user.set_password(password)
+        if avatar:
+            user.avatar = avatar
+        user.save()
+        return user
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        avatar = validated_data.pop('avatar', None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        if password:
+            instance.set_password(password)
+
+        if avatar is not None:
+            instance.avatar = avatar
+
+        instance.save()
+        instance.update_customer_type()
+        return instance
 
 # Serializer cho danh sách User với thống kê
 class UserListSerializer(ModelSerializer):
@@ -154,35 +196,38 @@ class UserListSerializer(ModelSerializer):
     def create(self, validated_data):
         password = validated_data.pop('password')
         avatar = validated_data.pop('avatar', None)
-        user = User.objects.create_user(
+        user = User(
             username=validated_data['username'],
             email=validated_data['email'],
-            password=password,
-            full_name=validated_data['full_name'],
+            full_name=validated_data.get('full_name'),
             phone=validated_data.get('phone'),
             id_card=validated_data.get('id_card'),
             address=validated_data.get('address'),
             role=validated_data.get('role', 'customer'),
-            avatar=avatar
         )
+        user.set_password(password)  
+        if avatar:
+            user.avatar = avatar
+        user.save()
         return user
 
     def update(self, instance, validated_data):
         password = validated_data.pop('password', None)
         avatar = validated_data.pop('avatar', None)
-        
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
-        
+
         if password:
-            instance.set_password(password)
-        
+            instance.set_password(password)  
+
         if avatar is not None:
             instance.avatar = avatar
-        
+
         instance.save()
         instance.update_customer_type()
-        return instance
+        return user
+
 
 
 # Serializer cho Booking
@@ -414,26 +459,38 @@ class BookingDetailSerializer(ModelSerializer):
 
 
     def create(self, validated_data):
-        customer = self.context['request'].user
-        rooms_data = validated_data.pop('rooms', [])
-        
-        booking = Booking.objects.create(customer=customer, **validated_data)
-        
-        if rooms_data:
-            booking.rooms.set(rooms_data)
-        
-        return booking
+        password = validated_data.pop('password')
+        avatar = validated_data.pop('avatar', None)
+        user = User(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            full_name=validated_data.get('full_name'),
+            phone=validated_data.get('phone'),
+            id_card=validated_data.get('id_card'),
+            address=validated_data.get('address'),
+            role=validated_data.get('role', 'customer'),
+        )
+        user.set_password(password) 
+        if avatar:
+            user.avatar = avatar
+        user.save()
+        return user
 
-    def update(self, instance, validated_data):
-        rooms_data = validated_data.pop('rooms', None)
-        
+    def update(self, validated_data):
+        password = validated_data.pop('password', None)
+        avatar = validated_data.pop('avatar', None)
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
-        
-        if rooms_data is not None:
-            instance.rooms.set(rooms_data)
-        
+
+        if password:
+            instance.set_password(password)  
+
+        if avatar is not None:
+            instance.avatar = avatar
+
         instance.save()
+        instance.update_customer_type()
         return instance
 
     class Meta:

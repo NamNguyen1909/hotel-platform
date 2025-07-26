@@ -114,6 +114,13 @@ const Invoices = () => {
                 </Card>
               </Grid>
             ))}
+            <Button
+              variant="contained"
+              sx={{ bgcolor: '#DAA520', '&:hover': { bgcolor: '#B8860B' }, mt: 2 }}
+              onClick={() => navigate('/create-invoice')}
+            >
+              Tạo Hóa Đơn
+            </Button>
           </Grid>
         )}
       </Container>

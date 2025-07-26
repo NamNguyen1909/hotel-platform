@@ -402,3 +402,7 @@ def get_user_permissions(user):
         return []
     
     return ROLE_PERMISSIONS.get(user.role, [])
+
+class CanAccessAllBookings(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and hasattr(request.user, 'role') and request.user.role in ['staff', 'admin', 'owner']

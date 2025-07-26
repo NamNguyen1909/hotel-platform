@@ -5,6 +5,10 @@ from django.shortcuts import redirect, render
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import urllib
+import logging
+
+# Thiết lập logger
+logger = logging.getLogger(__name__)
 
 # REST Framework imports
 from rest_framework import viewsets, status, generics
@@ -39,7 +43,7 @@ from .permissions import (
     IsBookingOwner, IsRoomRentalOwner, IsPaymentOwner, IsNotificationOwner, CanManageRooms,
     CanManageBookings, CanManagePayments, CanCreateDiscountCode, CanViewStats, CanCheckIn,
     CanCheckOut, CanConfirmBooking, CanGenerateQRCode, CanUpdateProfile, CanCancelUpdateBooking,
-    CanCreateNotification, CanModifyRoomType, CanManageCustomers, CanManageStaff
+    CanCreateNotification, CanModifyRoomType, CanManageCustomers, CanManageStaff, CanAccessAllBookings
 )
 from .paginators import ItemPaginator, UserPaginator, RoomPaginator, RoomTypePaginator
 
@@ -87,14 +91,17 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
         Nếu chưa đăng nhập, chỉ cho phép tạo tài khoản customer.
         """
         data = request.data.copy()
+        logger.debug("Request data for user creation: %s", data)  # Log dữ liệu đầu vào
         if not request.user.is_authenticated:
             data['role'] = 'customer'
 
         serializer = UserSerializer(data=data)
         if serializer.is_valid():
             user = serializer.save()
+            logger.debug("Created user with password: %s", user.password)  # Log mật khẩu đã băm
             return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
+        logger.error("Serializer errors: %s", serializer.errors)  # Log lỗi nếu có
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def update(self, request, pk=None):
@@ -136,7 +143,6 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
         """
         staff_users = User.objects.filter(role='staff').order_by('-created_at')
         
-        # Áp dụng search filter
         search = request.query_params.get('search', None)
         if search:
             staff_users = staff_users.filter(
@@ -146,7 +152,6 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
                 Q(phone__icontains=search)
             )
         
-        # Phân trang
         paginator = UserPaginator()
         page = paginator.paginate_queryset(staff_users, request)
         if page is not None:
@@ -197,7 +202,6 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
         """
         Kích hoạt/vô hiệu hóa user (nhân viên hoặc khách hàng) - chỉ dành cho Admin và Owner
         """
-        # Kiểm tra quyền
         if not (request.user.role in ['admin', 'owner']):
             return Response(
                 {'error': 'Bạn không có quyền thực hiện thao tác này'}, 
@@ -207,21 +211,18 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
         try:
             user = get_object_or_404(User, pk=pk)
             
-            # Chỉ cho phép toggle active cho staff và customer
             if user.role not in ['staff', 'customer']:
                 return Response(
                     {'error': 'Chỉ có thể thay đổi trạng thái nhân viên hoặc khách hàng'}, 
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Không cho phép user tự vô hiệu hóa chính mình
             if user == request.user:
                 return Response(
                     {'error': 'Không thể thay đổi trạng thái của chính mình'}, 
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Toggle active status
             user.is_active = not user.is_active
             user.save()
             
@@ -247,7 +248,6 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
         """
         customer_users = User.objects.filter(role='customer').order_by('-created_at')
         
-        # Áp dụng search filter
         search = request.query_params.get('search', None)
         if search:
             customer_users = customer_users.filter(
@@ -257,12 +257,10 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
                 Q(phone__icontains=search)
             )
         
-        # Filter theo customer type
         customer_type = request.query_params.get('customer_type', None)
         if customer_type:
             customer_users = customer_users.filter(customer_type=customer_type)
         
-        # Phân trang
         paginator = UserPaginator()
         page = paginator.paginate_queryset(customer_users, request)
         if page is not None:
@@ -474,6 +472,7 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
     queryset = Booking.objects.all()
     serializer_class = BookingSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = ItemPaginator
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ['customer__full_name', 'customer__phone', 'id', 'rooms__room_number', 'rooms__room_type__name']
     ordering_fields = ['check_in_date', 'check_out_date', 'created_at']
@@ -485,36 +484,37 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         return BookingSerializer
 
     def get_queryset(self):
+        from .permissions import has_permission
         queryset = Booking.objects.select_related('customer').prefetch_related('rooms').all()
-        
-        # Filter by user role
+
+        # Nếu là customer, chỉ trả về booking của họ
         if self.request.user.is_authenticated and self.request.user.role == 'customer':
             queryset = queryset.filter(customer=self.request.user)
-        
-        # Filter by status
-        status_filter = self.request.query_params.get('status', None)
+
+        # Các bộ lọc khác
+        status_filter = self.request.query_params.get('status')
         if status_filter:
             queryset = queryset.filter(status=status_filter)
-        
-        # Filter by check_in_date
-        check_in_date = self.request.query_params.get('check_in_date', None)
+
+        check_in_date = self.request.query_params.get('check_in_date')
         if check_in_date:
             queryset = queryset.filter(check_in_date__date=check_in_date)
-        
-        # Filter by search query (search bar)
-        search_query = self.request.query_params.get('search', None)
-        if search_query:
+
+        search_query = self.request.query_params.get('search')
+        if search_query and search_query.strip():
             queryset = queryset.filter(
                 Q(customer__full_name__icontains=search_query) |
                 Q(customer__phone__icontains=search_query) |
                 Q(rooms__room_number__icontains=search_query) |
                 Q(rooms__room_type__name__icontains=search_query)
             ).distinct()
-        
+
         return queryset
 
     def get_permissions(self):
-        if self.action in ['confirm', 'checkin']:
+        if self.action in ['list', 'retrieve']:
+            return [CanAccessAllBookings()]
+        elif self.action in ['confirm', 'checkin']:
             return [CanConfirmBooking()]
         elif self.action in ['cancel', 'update', 'partial_update']:
             return [CanCancelUpdateBooking()]
