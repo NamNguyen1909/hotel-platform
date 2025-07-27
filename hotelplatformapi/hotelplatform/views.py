@@ -651,26 +651,19 @@ class RoomRentalViewSet(viewsets.ViewSet, generics.ListAPIView, generics.Retriev
 
     @action(detail=True, methods=['post'])
     def checkout(self, request, pk=None):
-        """Check-out và tính toán giá cuối cùng"""
         rental = get_object_or_404(RoomRental, pk=pk)
-        
         try:
             with transaction.atomic():
-                # Tính toán giá cuối cùng
-                rental.check_out_date = timezone.now()
-                rental.save()
-                
-                # Cập nhật booking status
-                if rental.booking:
-                    rental.booking.status = BookingStatus.CHECKED_OUT
-                    rental.booking.save()
-                
-                # Giải phóng phòng
-                for room in rental.rooms.all():
-                    room.status = 'available'
-                    room.save()
-                
-                return Response(RoomRentalDetailSerializer(rental).data)
+                # Gọi phương thức check_out từ model
+                total_price = rental.check_out()
+                payment = rental.payments.last()  # lấy payment vừa tạo
+
+                return Response({
+                    "message": "Check-out thành công",
+                    "rental": RoomRentalDetailSerializer(rental).data,
+                    "total_price": str(total_price),
+                    "payment": PaymentSerializer(payment).data if payment else None
+                })
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 

@@ -8,6 +8,9 @@ from cloudinary.models import CloudinaryField
 import uuid
 from decimal import Decimal
 from datetime import timedelta
+import logging
+
+logger = logging.getLogger("hotelplatform")
 
 # Quản lý người dùng tùy chỉnh
 class UserManager(BaseUserManager):
@@ -237,10 +240,11 @@ class Booking(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
-        # Cập nhật trạng thái phòng
-        for room in self.rooms.all():
-            room.status = 'booked'
-            room.save()
+        # Chỉ cập nhật trạng thái phòng về 'booked' nếu booking chưa checked_out/cancelled
+        if self.status not in ['checked_out', 'cancelled']:
+            for room in self.rooms.all():
+                room.status = 'booked'
+                room.save()
         # Note: Customer stats sẽ được cập nhật qua signals
 
     def generate_qr_code(self):
@@ -346,6 +350,7 @@ class RoomRental(models.Model):
     rooms = models.ManyToManyField(Room, related_name='rentals')
     check_in_date = models.DateTimeField(auto_now_add=True)
     check_out_date = models.DateTimeField()
+    actual_check_out_date = models.DateTimeField(null=True, blank=True)  # Ngày giờ thực tế khi checkout
     total_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0'))])
     # total_price: Giá thực tế, tính toán khi check-out, dựa trên:
     # Thời gian lưu trú thực tế (check_out_date - check_in_date).
@@ -374,63 +379,60 @@ class RoomRental(models.Model):
 
     def save(self, *args, **kwargs):
         self.full_clean()
+        is_new = self.pk is None
         super().save(*args, **kwargs)
-        # Cập nhật trạng thái phòng
-        for room in self.rooms.all():
-            room.status = 'occupied'
-            room.save()
+        # Chỉ cập nhật trạng thái phòng thành 'occupied' khi tạo mới rental
+        if is_new:
+            for room in self.rooms.all():
+                room.status = 'occupied'
+                room.save()
         # Note: Customer stats sẽ được cập nhật qua signals
 
     def check_out(self, actual_check_out_date=None):
         """
-        Thực hiện check-out và tính toán giá cuối cùng
+        Thực hiện checkout, cập nhật trạng thái phòng, booking, payment.
         """
+        for room in self.rooms.all():
+            if room.status not in ['booked', 'occupied']:
+                raise ValidationError(f"Phòng {room.room_number} không ở trạng thái booked hoặc occupied.")
         if not actual_check_out_date:
             actual_check_out_date = timezone.now()
-        
+        self.actual_check_out_date = actual_check_out_date
         self.check_out_date = actual_check_out_date
-        
-        # Tính toán lại giá dựa trên thời gian thực tế
         self.total_price = self.calculate_final_price()
+        super().save(update_fields=['actual_check_out_date', 'check_out_date', 'total_price', 'updated_at'])
         
-        # Cập nhật booking status
+        # Cập nhật trạng thái phòng về available nếu không còn booking chưa hoàn tất
+        for room in self.rooms.all():
+            active_bookings = room.bookings.filter(
+                status__in=['pending', 'confirmed', 'checked_in']
+            ).exclude(id=self.booking.id if self.booking else None)
+            if not active_bookings.exists():
+                room.status = 'available'
+                room.save(update_fields=['status'])
+
+        # Cập nhật trạng thái booking nếu có
         if self.booking:
             self.booking.status = BookingStatus.CHECKED_OUT
-            self.booking.save()
-        
-        # Giải phóng phòng
-        for room in self.rooms.all():
-            room.status = 'available'
-            room.save()
-        
-        self.save()
-        
+            self.booking.save(update_fields=['status', 'updated_at'])
+
+        self.finalize_payment()
+
         return self.total_price
 
-    def calculate_final_price(self):
+    def finalize_payment(self):
         """
-        Tính giá cuối cùng dựa trên thời gian thực tế và số khách
+        Tạo payment nếu chưa có payment cho rental này.
         """
-        total_price = Decimal('0')
-        
-        # Tính số ngày thực tế
-        actual_days = (self.check_out_date - self.check_in_date).days
-        if actual_days < 1:
-            actual_days = 1  # Tối thiểu 1 ngày
-        
-        for room in self.rooms.all():
-            base_price = room.room_type.base_price
-            room_total = base_price * actual_days
-            
-            # Tính phụ thu nếu vượt quá số khách tối đa
-            if self.guest_count > room.room_type.max_guests:
-                extra_guests = self.guest_count - room.room_type.max_guests
-                surcharge = base_price * (room.room_type.extra_guest_surcharge / 100) * extra_guests * actual_days
-                room_total += surcharge
-            
-            total_price += room_total
-        
-        return total_price
+        if not self.payments.exists():
+            Payment.objects.create(
+                rental=self,
+                customer=self.customer,
+                amount=self.total_price,
+                payment_method='cash',  # mặc định cash, có thể sửa lại ở view
+                status=False,
+                transaction_id=f"PAY-{self.id}-{timezone.now().strftime('%Y%m%d%H%M%S')}"
+            )
 
     def get_duration_days(self):
         """
@@ -443,6 +445,30 @@ class RoomRental(models.Model):
         Kiểm tra xem có quá hạn checkout không
         """
         return timezone.now() > self.check_out_date
+
+    def calculate_final_price(self):
+        """
+        Tính giá cuối cùng dựa trên thời gian thực tế và số khách
+        """
+        total_price = Decimal('0')
+        # Tính số ngày thực tế
+        actual_days = (self.check_out_date - self.check_in_date).days
+        if actual_days < 1:
+            actual_days = 1  # Tối thiểu 1 ngày
+
+        for room in self.rooms.all():
+            base_price = room.room_type.base_price
+            room_total = base_price * actual_days
+
+            # Tính phụ thu nếu vượt quá số khách tối đa
+            if self.guest_count > room.room_type.max_guests:
+                extra_guests = self.guest_count - room.room_type.max_guests
+                surcharge = base_price * (room.room_type.extra_guest_surcharge / 100) * extra_guests * actual_days
+                room_total += surcharge
+
+            total_price += room_total
+
+        return total_price
 
 # Thanh toán
 # Được tạo khi khách check-out,Trường amount lưu tổng số tiền thanh toán cuối cùng, 
@@ -569,6 +595,12 @@ class Notification(models.Model):
 #
 #     class Meta:
 #         indexes = [
+#             models.Index(fields=['booking', 'created_at']),
+#             models.Index(fields=['receiver', 'created_at']),
+#         ]
+#
+#     def __str__(self):
+#         return f"Tin nhắn từ {self.sender} đến {self.receiver or 'nhóm'}"
 #             models.Index(fields=['booking', 'created_at']),
 #             models.Index(fields=['receiver', 'created_at']),
 #         ]

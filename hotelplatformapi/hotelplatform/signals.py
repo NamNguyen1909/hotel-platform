@@ -70,8 +70,10 @@ def booking_pre_save(sender, instance, **kwargs):
             if old_instance.status != BookingStatus.CANCELLED and instance.status == BookingStatus.CANCELLED:
                 # Giải phóng phòng
                 for room in instance.rooms.all():
-                    room.status = 'available'
-                    room.save()
+                    # Chỉ cập nhật nếu phòng không phải 'occupied'
+                    if room.status != 'occupied':
+                        room.status = 'available'
+                        room.save()
                 
                 # Tạo thông báo hủy booking
                 Notification.objects.create(

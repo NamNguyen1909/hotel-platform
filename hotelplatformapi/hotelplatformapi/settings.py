@@ -285,7 +285,21 @@ LOGGING = {
             'class': 'logging.StreamHandler',
         },
     },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',  # Đảm bảo log INFO trở lên được in ra
+    },
     'loggers': {
+        'hotelplatform': {
+            'handlers': ['console'],
+            'level': 'INFO',  # Có thể đổi thành 'DEBUG' nếu muốn chi tiết hơn
+            'propagate': False,
+        },
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
         'oauth2_provider': {
             'handlers': ['console'],
             'level': 'DEBUG',
