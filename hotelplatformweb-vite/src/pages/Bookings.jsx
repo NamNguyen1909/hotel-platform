@@ -11,9 +11,21 @@ import {
   Paper,
   Chip,
   Stack,
+  IconButton,
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import { DataGrid } from '@mui/x-data-grid';
-import { Search as SearchIcon, CheckCircle, ExitToApp, Add } from '@mui/icons-material';
+import {
+  Search as SearchIcon,
+  CheckCircle,
+  ExitToApp,
+  Add,
+  Cancel,
+} from '@mui/icons-material';
 import api, { endpoints } from '../services/apis';
 import authUtils from '../services/auth';
 
@@ -23,6 +35,23 @@ const formatPrice = (price) => {
     style: 'currency',
     currency: 'VND',
   }).format(price);
+};
+
+// Format ngày giờ
+const formatDate = (dateString) => {
+  return new Intl.DateTimeFormat('vi-VN', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(dateString));
+};
+
+// Map trạng thái booking với màu sắc và nhãn
+const statusConfig = {
+  pending: { label: 'Chờ xác nhận', color: 'warning' },
+  confirmed: { label: 'Đã xác nhận', color: 'info' },
+  checked_in: { label: 'Đã check-in', color: 'success' },
+  checked_out: { label: 'Đã check-out', color: 'default' },
+  cancelled: { label: 'Đã hủy', color: 'error' },
 };
 
 const Bookings = () => {
@@ -36,6 +65,13 @@ const Bookings = () => {
   });
   const [rowCount, setRowCount] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
+  const [dialog, setDialog] = useState({
+    open: false,
+    action: null,
+    bookingId: null,
+    title: '',
+    message: '',
+  });
 
   // Fetch bookings từ API
   useEffect(() => {
@@ -44,7 +80,13 @@ const Bookings = () => {
         setLoading(true);
         setError(null);
 
-        // Kiểm tra role của user
+        // Kiểm tra xác thực và quyền truy cập
+        if (!authUtils.isAuthenticated()) {
+          setError('Vui lòng đăng nhập để xem danh sách đặt phòng.');
+          navigate('/login');
+          return;
+        }
+
         const user = await authUtils.getCurrentUser();
         if (!['staff', 'admin', 'owner'].includes(user?.role)) {
           setError('Bạn không có quyền truy cập trang này.');
@@ -52,35 +94,65 @@ const Bookings = () => {
           return;
         }
 
-        // Gọi API với params phân trang và tìm kiếm
+        // Gọi API lấy danh sách bookings
         const response = await api.get(endpoints.bookings.list, {
           params: {
             page: paginationModel.page + 1, // Django pagination là 1-based
             page_size: paginationModel.pageSize,
-            search: searchTerm.trim() || undefined, // Gửi undefined nếu search rỗng
+            search: searchTerm.trim() || undefined,
           },
         });
 
+        // Debug dữ liệu API
+        console.log('API Response (Bookings):', response.data.results);
+
         // Xử lý dữ liệu từ API
-        const fetchedBookings = (response.data.results || []).map((booking) => ({
-          id: booking.id,
-          customer_name: booking.customer_name || 'Không xác định',
-          customer_phone: booking.customer_phone || 'N/A',
-          room_numbers: booking.room_details?.map((room) => room.room_number).join(', ') || 'N/A',
-          check_in_date: booking.check_in_date,
-          check_out_date: booking.check_out_date,
-          total_price: booking.total_price,
-          guest_count: booking.guest_count,
-          status: booking.status,
-          room_details: booking.room_details || [],
-        }));
+        const fetchedBookings = (response.data.results || []).map((booking) => {
+          // Lấy thông tin khách hàng từ customer_name và customer_phone
+          const customerName = booking.customer_name;
+          const customerPhone = booking.customer_phone || 'N/A';
+
+          // Debug nếu thiếu thông tin khách hàng
+          if (!customerName) {
+            console.warn(`Booking ID ${booking.id} thiếu tên khách hàng:`, {
+              booking: booking,
+            });
+          }
+
+          return {
+            id: booking.id,
+            customer_name: customerName || 'Khách hàng không xác định',
+            customer_phone: customerPhone,
+            room_numbers: booking.room_details
+              ?.map((room) => room.room_number)
+              .join(', ') || 'N/A',
+            check_in_date: booking.check_in_date,
+            check_out_date: booking.check_out_date,
+            total_price: parseFloat(booking.total_price || 0),
+            guest_count: booking.guest_count || 0,
+            status: booking.status,
+            room_details: booking.room_details || [],
+            rentals: booking.rentals || [],
+          };
+        });
+
+        // Kiểm tra và hiển thị cảnh báo nếu có booking thiếu thông tin
+        if (fetchedBookings.some((b) => !b.customer_name || b.customer_name === 'Khách hàng không xác định')) {
+          setError(
+            'Cảnh báo: Một số booking thiếu tên khách hàng. Vui lòng kiểm tra dữ liệu từ hệ thống.'
+          );
+        } else if (fetchedBookings.some((b) => b.customer_phone === 'N/A')) {
+          setError(
+            'Thông báo: Một số khách hàng chưa cung cấp số điện thoại.'
+          );
+        }
 
         setBookings(fetchedBookings);
         setRowCount(response.data.count || 0);
       } catch (err) {
         console.error('Error fetching bookings:', err);
         if (err.response?.status === 401) {
-          setError('Bạn cần đăng nhập lại để xem danh sách đặt phòng.');
+          setError('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
           authUtils.clearTokens();
           navigate('/login');
         } else if (err.response?.status === 403) {
@@ -94,28 +166,42 @@ const Bookings = () => {
       }
     };
 
-    if (authUtils.isAuthenticated()) {
-      fetchBookings();
-    } else {
-      setError('Vui lòng đăng nhập để xem danh sách đặt phòng.');
-      navigate('/login');
-    }
+    fetchBookings();
   }, [navigate, paginationModel, searchTerm]);
 
   // Xử lý tìm kiếm
   const handleSearch = (event) => {
     setSearchTerm(event.target.value);
-    setPaginationModel((prev) => ({ ...prev, page: 0 })); // Reset về trang đầu khi tìm kiếm
+    setPaginationModel((prev) => ({ ...prev, page: 0 })); // Reset về trang đầu
+  };
+
+  // Mở dialog xác nhận
+  const openConfirmationDialog = (action, bookingId, title, message) => {
+    setDialog({
+      open: true,
+      action,
+      bookingId,
+      title,
+      message,
+    });
+  };
+
+  // Đóng dialog
+  const closeDialog = () => {
+    setDialog({ open: false, action: null, bookingId: null, title: '', message: '' });
   };
 
   // Xử lý check-in
   const handleCheckIn = async (bookingId) => {
     try {
-      const response = await api.post(endpoints.bookings.checkin(bookingId));
+      const booking = bookings.find((b) => b.id === bookingId);
+      const response = await api.post(endpoints.bookings.checkin(bookingId), {
+        actual_guest_count: booking.guest_count,
+      });
       setBookings((prev) =>
         prev.map((booking) =>
           booking.id === bookingId
-            ? { ...booking, status: 'checked_in', rentals: [response.data.rental] }
+            ? { ...booking, status: 'checked_in', rentals: [response.data] }
             : booking
         )
       );
@@ -161,111 +247,135 @@ const Bookings = () => {
     }
   };
 
+  // Xử lý xác nhận hành động từ dialog
+  const handleConfirmAction = async () => {
+    if (dialog.action === 'checkin') {
+      await handleCheckIn(dialog.bookingId);
+    } else if (dialog.action === 'checkout') {
+      await handleCheckOut(dialog.bookingId);
+    } else if (dialog.action === 'cancel') {
+      await handleCancel(dialog.bookingId);
+    }
+    closeDialog();
+  };
+
   // Điều hướng đến form tạo booking
   const handleCreateBooking = () => {
     navigate('/book');
   };
 
-  // Cấu hình cột cho DataGrid
+  // Cột cho DataGrid
   const columns = [
     { field: 'id', headerName: 'ID', width: 90 },
-    { field: 'customer_name', headerName: 'Khách hàng', width: 200 },
-    { field: 'customer_phone', headerName: 'Số điện thoại', width: 150 },
-    { field: 'room_numbers', headerName: 'Phòng', width: 150 },
+    {
+      field: 'customer_name',
+      headerName: 'Khách hàng',
+      width: 150,
+      renderCell: (params) => (
+        <Typography variant="body2">{params.value}</Typography>
+      ),
+    },
+    {
+      field: 'customer_phone',
+      headerName: 'Số điện thoại',
+      width: 130,
+    },
+    {
+      field: 'room_numbers',
+      headerName: 'Phòng',
+      width: 150,
+    },
     {
       field: 'check_in_date',
-      headerName: 'Ngày check-in',
+      headerName: 'Check-in',
       width: 150,
-      valueFormatter: ({ value }) =>
-        value ? new Date(value).toLocaleDateString('vi-VN') : 'N/A',
+      renderCell: (params) => formatDate(params.value),
     },
     {
       field: 'check_out_date',
-      headerName: 'Ngày check-out',
+      headerName: 'Check-out',
       width: 150,
-      valueFormatter: ({ value }) =>
-        value ? new Date(value).toLocaleDateString('vi-VN') : 'N/A',
+      renderCell: (params) => formatDate(params.value),
     },
     {
       field: 'total_price',
-      headerName: 'Tổng giá',
-      width: 150,
-      valueFormatter: ({ value }) => (value ? formatPrice(value) : 'N/A'),
+      headerName: 'Tổng tiền',
+      width: 120,
+      renderCell: (params) => formatPrice(params.value),
+    },
+    {
+      field: 'guest_count',
+      headerName: 'Số khách',
+      width: 100,
     },
     {
       field: 'status',
       headerName: 'Trạng thái',
       width: 150,
-      renderCell: ({ value }) => (
-        <Chip
-          label={
-            value === 'pending'
-              ? 'Chờ xác nhận'
-              : value === 'confirmed'
-              ? 'Đã xác nhận'
-              : value === 'checked_in'
-              ? 'Đã nhận phòng'
-              : value === 'checked_out'
-              ? 'Đã trả phòng'
-              : value === 'cancelled'
-              ? 'Đã hủy'
-              : value === 'no_show'
-              ? 'Không xuất hiện'
-              : 'Không xác định'
-          }
-          color={
-            value === 'confirmed'
-              ? 'warning'
-              : value === 'checked_in'
-              ? 'success'
-              : value === 'checked_out'
-              ? 'default'
-              : value === 'pending'
-              ? 'info'
-              : value === 'cancelled' || value === 'no_show'
-              ? 'error'
-              : 'default'
-          }
-        />
-      ),
+      renderCell: (params) => {
+        const { label, color } = statusConfig[params.value] || {
+          label: 'Không xác định',
+          color: 'default',
+        };
+        return <Chip label={label} color={color} size="small" />;
+      },
     },
     {
       field: 'actions',
       headerName: 'Hành động',
-      width: 250,
-      renderCell: ({ row }) => (
+      width: 200,
+      renderCell: (params) => (
         <Stack direction="row" spacing={1}>
-          {row.status === 'confirmed' && (
-            <Button
-              variant="contained"
-              color="success"
-              size="small"
-              startIcon={<CheckCircle />}
-              onClick={() => handleCheckIn(row.id)}
-            >
-              Check-in
-            </Button>
+          {params.row.status === 'confirmed' && (
+            <Tooltip title="Check-in">
+              <IconButton
+                color="success"
+                onClick={() =>
+                  openConfirmationDialog(
+                    'checkin',
+                    params.row.id,
+                    'Xác nhận Check-in',
+                    `Xác nhận check-in cho booking ID ${params.row.id}?`
+                  )
+                }
+              >
+                <CheckCircle />
+              </IconButton>
+            </Tooltip>
           )}
-          {row.status === 'checked_in' && (
-            <Button
-              variant="contained"
-              color="primary"
-              size="small"
-              startIcon={<ExitToApp />}
-              onClick={() => handleCheckOut(row.id)}
-            >
-              Check-out
-            </Button>
+          {params.row.status === 'checked_in' && (
+            <Tooltip title="Check-out">
+              <IconButton
+                color="primary"
+                onClick={() =>
+                  openConfirmationDialog(
+                    'checkout',
+                    params.row.id,
+                    'Xác nhận Check-out',
+                    `Xác nhận check-out cho booking ID ${params.row.id}?`
+                  )
+                }
+              >
+                <ExitToApp />
+              </IconButton>
+            </Tooltip>
           )}
-          {['pending', 'confirmed'].includes(row.status) && (
-            <Button
-              variant="contained"
-              color="error"
-              size="small"
-              onClick={() => handleCancel(row.id)}
-            >
-              Hủy
-            </Button>
+          {['pending', 'confirmed'].includes(params.row.status) && (
+            <Tooltip title="Hủy">
+              <IconButton
+                color="error"
+                onClick={() =>
+                  openConfirmationDialog(
+                    'cancel',
+                    params.row.id,
+                    'Xác nhận Hủy Booking',
+                    `Xác nhận hủy booking ID ${params.row.id}?`
+                  )
+                }
+              >
+                <Cancel />
+              </IconButton>
+            </Tooltip>
           )}
         </Stack>
       ),
@@ -274,70 +384,94 @@ const Bookings = () => {
 
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-          Quản lý đặt phòng
-        </Typography>
+      <Typography variant="h4" gutterBottom>
+        Quản lý đặt phòng
+      </Typography>
+
+      {/* Hiển thị lỗi nếu có */}
+      {error && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
+      {/* Thanh tìm kiếm và nút tạo booking */}
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        spacing={2}
+        sx={{ mb: 3 }}
+        alignItems={{ xs: 'stretch', sm: 'center' }}
+      >
+        <Box sx={{ display: 'flex', flex: 1 }}>
+          <TextField
+            fullWidth
+            variant="outlined"
+            placeholder="Tìm kiếm theo tên khách hàng hoặc số điện thoại..."
+            value={searchTerm}
+            onChange={handleSearch}
+            InputProps={{
+              startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />,
+            }}
+          />
+        </Box>
         <Button
           variant="contained"
           startIcon={<Add />}
-          sx={{ bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark' } }}
           onClick={handleCreateBooking}
+          sx={{ minWidth: { xs: '100%', sm: 160 } }}
         >
-          Tạo Đặt Phòng
+          Tạo đặt phòng
         </Button>
-      </Box>
+      </Stack>
 
-      <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
-        <TextField
-          fullWidth
-          variant="outlined"
-          placeholder="Tìm kiếm theo tên khách hàng, số điện thoại, hoặc số phòng..."
-          value={searchTerm}
-          onChange={handleSearch}
-          InputProps={{
-            startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />,
-          }}
-          sx={{ mb: 3 }}
-        />
-
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-
+      {/* Bảng danh sách bookings */}
+      <Paper elevation={3} sx={{ height: 600, width: '100%' }}>
         {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              height: '100%',
+            }}
+          >
             <CircularProgress />
           </Box>
         ) : (
-          <Box sx={{ height: 600, width: '100%' }}>
-            <DataGrid
-              rows={bookings}
-              columns={columns}
-              paginationMode="server"
-              rowCount={rowCount}
-              paginationModel={paginationModel}
-              onPaginationModelChange={setPaginationModel}
-              pageSizeOptions={[10, 20, 50]}
-              disableRowSelectionOnClick
-              sx={{
-                '& .MuiDataGrid-row:hover': {
-                  backgroundColor: 'neutral.light',
-                },
-                '& .MuiDataGrid-cell': {
-                  borderBottom: '1px solid rgba(139, 69, 19, 0.1)',
-                },
-                '& .MuiDataGrid-columnHeaders': {
-                  backgroundColor: 'neutral.main',
-                  borderBottom: '2px solid primary.main',
-                },
-              }}
-            />
-          </Box>
+          <DataGrid
+            rows={bookings}
+            columns={columns}
+            rowCount={rowCount}
+            paginationMode="server"
+            paginationModel={paginationModel}
+            onPaginationModelChange={setPaginationModel}
+            pageSizeOptions={[10, 25, 50]}
+            disableSelectionOnClick
+            sx={{
+              '& .MuiDataGrid-cell': {
+                fontSize: '0.875rem',
+              },
+              '& .MuiDataGrid-columnHeaderTitle': {
+                fontWeight: 'bold',
+              },
+            }}
+          />
         )}
       </Paper>
+
+      {/* Dialog xác nhận hành động */}
+      <Dialog open={dialog.open} onClose={closeDialog}>
+        <DialogTitle>{dialog.title}</DialogTitle>
+        <DialogContent>
+          <Typography>{dialog.message}</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeDialog}>Hủy</Button>
+          <Button onClick={handleConfirmAction} color="primary" variant="contained">
+            Xác nhận
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };
