@@ -16,15 +16,14 @@ router.register(r'notifications', views.NotificationViewSet)
 
 # Định nghĩa các URL patterns
 urlpatterns = [
-    # Định nghĩa để trả về đoạn văn bản để test cho trang chủ
     path('', include(router.urls)),
     
-    # API endpoints
-    # path('api/', include(router.urls)),
-    
     # QR Code endpoints
-    path('api/qr-scan/', views.QRCodeScanView.as_view(), name='qr-scan'),
+    path('api/qr-payment/', views.QRCodePaymentView.as_view(), name='qr-payment'),
     path('api/qr-generate/', views.QRCodeGenerateView.as_view(), name='qr-generate'),
+    
+    # Manual RoomRental endpoint
+    path('api/rentals/create-manual/', views.RoomRentalViewSet.as_view({'post': 'create_manual_rental'}), name='create-manual-rental'),
     
     # Stats endpoint
     path('api/stats/', views.StatsView.as_view(), name='stats'),

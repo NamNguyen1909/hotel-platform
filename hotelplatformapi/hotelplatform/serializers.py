@@ -254,8 +254,6 @@ class BookingSerializer(ModelSerializer):
             'guest_count', 'status', 'special_requests', 'qr_code', 'created_at', 'updated_at', 'uuid'
         ]
         read_only_fields = ['id', 'customer_name', 'customer_phone', 'customer_email', 'created_at', 'updated_at', 'uuid']
-        
-        # Đảm bảo các trường không bắt buộc khi cập nhật (partial update)
         extra_kwargs = {
             'check_in_date': {'required': False},
             'check_out_date': {'required': False},
@@ -266,12 +264,8 @@ class BookingSerializer(ModelSerializer):
             'rooms': {'required': False},
         }
 
-    # Xử lý total_price dưới dạng DecimalField để đảm bảo validate đúng
     total_price = serializers.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        min_value=Decimal('0'),
-        required=False,
+        max_digits=12, decimal_places=2, min_value=Decimal('0'), required=False
     )
     guest_count = serializers.IntegerField(min_value=1, required=False)
 
@@ -280,6 +274,7 @@ class BookingSerializer(ModelSerializer):
         check_out_date = attrs.get('check_out_date')
         rooms = attrs.get('rooms', [])
         guest_count = attrs.get('guest_count')
+        status = attrs.get('status')
 
         if check_in_date and check_out_date:
             if check_in_date >= check_out_date:
@@ -287,26 +282,24 @@ class BookingSerializer(ModelSerializer):
             if check_in_date > timezone.now() + timedelta(days=28):
                 raise serializers.ValidationError("Ngày nhận phòng không được vượt quá 28 ngày kể từ thời điểm đặt.")
 
-        for room in rooms:
-            if room.status != 'available':
-                raise serializers.ValidationError(f"Phòng {room.room_number} không khả dụng.")
-            if guest_count and guest_count > room.room_type.max_guests:
-                raise serializers.ValidationError(f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách.")
+        if rooms and guest_count:
+            for room in rooms:
+                if room.status != 'available' and status != 'checked_in':
+                    raise serializers.ValidationError(f"Phòng {room.room_number} không khả dụng.")
+                if guest_count > room.room_type.max_guests:
+                    raise serializers.ValidationError(f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách.")
 
         return attrs
 
-    def create(self, validated_data):
-        # Tự động gán customer từ context
-        customer = self.context['request'].user
-        rooms_data = validated_data.pop('rooms', [])
-        
-        booking = Booking.objects.create(customer=customer, **validated_data)
-        
-        # Thêm rooms vào booking
-        if rooms_data:
-            booking.rooms.set(rooms_data)
-        
-        return booking
+    def update(self, instance, validated_data):
+        rooms_data = validated_data.pop('rooms', None)
+        with transaction.atomic():
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            if rooms_data is not None:
+                instance.rooms.set(rooms_data)
+            instance.save()
+        return instance
 
 
 # Serializer cho RoomRental
@@ -321,28 +314,27 @@ class RoomRentalSerializer(ModelSerializer):
         model = RoomRental
         fields = [
             'id', 'booking', 'booking_id', 'customer', 'customer_name', 'customer_phone', 'customer_email',
-            'rooms', 'room_details', 'check_in_date', 'check_out_date', 'total_price',
-            'guest_count', 'created_at', 'updated_at'
+            'rooms', 'room_details', 'check_in_date', 'check_out_date', 'actual_check_out_date',
+            'total_price', 'guest_count', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'customer_name', 'customer_phone', 'customer_email', 'booking_id', 'check_in_date', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'customer_name', 'customer_phone', 'customer_email', 'booking_id', 'created_at', 'updated_at']
 
-    # Xử lý total_price dưới dạng DecimalField để đảm bảo validate đúng
     total_price = serializers.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        min_value=Decimal('0'),
-        required=False,
+        max_digits=12, decimal_places=2, min_value=Decimal('0'), required=False
     )
     guest_count = serializers.IntegerField(min_value=1, required=False)
 
     def validate(self, attrs):
         check_in_date = attrs.get('check_in_date', timezone.now())
         check_out_date = attrs.get('check_out_date')
+        actual_check_out_date = attrs.get('actual_check_out_date')
         rooms = attrs.get('rooms', [])
         guest_count = attrs.get('guest_count')
 
         if check_in_date and check_out_date and check_in_date >= check_out_date:
             raise serializers.ValidationError("Ngày nhận phòng phải trước ngày trả phòng.")
+        if actual_check_out_date and actual_check_out_date < check_in_date:
+            raise serializers.ValidationError("Ngày trả phòng thực tế phải sau ngày nhận phòng.")
 
         for room in rooms:
             if guest_count and guest_count > room.room_type.max_guests:
@@ -350,19 +342,18 @@ class RoomRentalSerializer(ModelSerializer):
 
         return attrs
 
-
-    def create(self, validated_data):
-        # Tự động gán customer từ context
-        customer = self.context['request'].user
-        rooms_data = validated_data.pop('rooms', [])
-        
+    def update(self, instance, validated_data):
+        rooms_data = validated_data.pop('rooms', None)
         with transaction.atomic():
-            rental = RoomRental.objects.create(customer=customer, **validated_data)
-            #Thêm rooms vào rental
-            if rooms_data:
-                rental.rooms.set(rooms_data)
-        
-        return rental
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            if rooms_data is not None:
+                instance.rooms.set(rooms_data)
+            instance.save()
+            # Nếu cập nhật actual_check_out_date, gọi check_out
+            if validated_data.get('actual_check_out_date'):
+                instance.check_out()
+        return instance
 
 
 # Serializer cho Payment
@@ -458,40 +449,40 @@ class BookingDetailSerializer(ModelSerializer):
         return attrs
 
 
-    def create(self, validated_data):
-        password = validated_data.pop('password')
-        avatar = validated_data.pop('avatar', None)
-        user = User(
-            username=validated_data['username'],
-            email=validated_data['email'],
-            full_name=validated_data.get('full_name'),
-            phone=validated_data.get('phone'),
-            id_card=validated_data.get('id_card'),
-            address=validated_data.get('address'),
-            role=validated_data.get('role', 'customer'),
-        )
-        user.set_password(password) 
-        if avatar:
-            user.avatar = avatar
-        user.save()
-        return user
+    # def create(self, validated_data):
+    #     password = validated_data.pop('password')
+    #     avatar = validated_data.pop('avatar', None)
+    #     user = User(
+    #         username=validated_data['username'],
+    #         email=validated_data['email'],
+    #         full_name=validated_data.get('full_name'),
+    #         phone=validated_data.get('phone'),
+    #         id_card=validated_data.get('id_card'),
+    #         address=validated_data.get('address'),
+    #         role=validated_data.get('role', 'customer'),
+    #     )
+    #     user.set_password(password) 
+    #     if avatar:
+    #         user.avatar = avatar
+    #     user.save()
+    #     return user
 
-    def update(self, validated_data):
-        password = validated_data.pop('password', None)
-        avatar = validated_data.pop('avatar', None)
+    # def update(self, validated_data):
+    #     password = validated_data.pop('password', None)
+    #     avatar = validated_data.pop('avatar', None)
 
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
+    #     for attr, value in validated_data.items():
+    #         setattr(instance, attr, value)
 
-        if password:
-            instance.set_password(password)  
+    #     if password:
+    #         instance.set_password(password)  
 
-        if avatar is not None:
-            instance.avatar = avatar
+    #     if avatar is not None:
+    #         instance.avatar = avatar
 
-        instance.save()
-        instance.update_customer_type()
-        return instance
+    #     instance.save()
+    #     instance.update_customer_type()
+    #     return instance
 
     class Meta:
         model = Booking

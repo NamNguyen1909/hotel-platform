@@ -240,12 +240,6 @@ class Booking(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
-        # Chỉ cập nhật trạng thái phòng về 'booked' nếu booking chưa checked_out/cancelled
-        if self.status not in ['checked_out', 'cancelled']:
-            for room in self.rooms.all():
-                room.status = 'booked'
-                room.save()
-        # Note: Customer stats sẽ được cập nhật qua signals
 
     def generate_qr_code(self):
         """
@@ -287,29 +281,8 @@ class Booking(models.Model):
         return result['secure_url']
 
     def check_in(self, actual_guest_count=None):
-        """
-        Thực hiện check-in và tạo RoomRental
-        """
-        if self.status != BookingStatus.CONFIRMED:
-            raise ValidationError("Booking chưa được xác nhận")
-        
-        # Tạo RoomRental
-        rental = RoomRental.objects.create(
-            booking=self,
-            customer=self.customer,
-            check_out_date=self.check_out_date,
-            total_price=self.total_price,
-            guest_count=actual_guest_count or self.guest_count,
-        )
-        
-        # Thêm rooms
-        rental.rooms.set(self.rooms.all())
-        
-        # Cập nhật status
-        self.status = BookingStatus.CHECKED_IN
-        self.save()
-        
-        return rental
+        """Phương thức này không còn được sử dụng vì check-in được xử lý qua API"""
+        raise NotImplementedError("Check-in được xử lý qua API, không tạo RoomRental")
 
     @classmethod
     def get_by_uuid(cls, uuid_str):
@@ -373,51 +346,30 @@ class RoomRental(models.Model):
             return  # Không kiểm tra nếu thiếu dữ liệu ngày
         if self.check_in_date >= self.check_out_date:
             raise ValidationError("Ngày nhận phòng phải trước ngày trả phòng.")
-        for room in self.rooms.all():
-            if self.guest_count > room.room_type.max_guests:
-                raise ValidationError(f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách.")
+        if self.pk:  # Chỉ kiểm tra rooms nếu bản ghi đã được lưu
+            for room in self.rooms.all():
+                if self.guest_count > room.room_type.max_guests:
+                    raise ValidationError(f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách.")
 
     def save(self, *args, **kwargs):
         self.full_clean()
-        is_new = self.pk is None
         super().save(*args, **kwargs)
-        # Chỉ cập nhật trạng thái phòng thành 'occupied' khi tạo mới rental
-        if is_new:
-            for room in self.rooms.all():
-                room.status = 'occupied'
-                room.save()
-        # Note: Customer stats sẽ được cập nhật qua signals
 
-    def check_out(self, actual_check_out_date=None):
+    def check_out(self):
         """
-        Thực hiện checkout, cập nhật trạng thái phòng, booking, payment.
+        Hoàn tất việc trả phòng thực tế, tính toán giá cuối cùng và tạo thanh toán
         """
-        for room in self.rooms.all():
-            if room.status not in ['booked', 'occupied']:
-                raise ValidationError(f"Phòng {room.room_number} không ở trạng thái booked hoặc occupied.")
-        if not actual_check_out_date:
-            actual_check_out_date = timezone.now()
-        self.actual_check_out_date = actual_check_out_date
-        self.check_out_date = actual_check_out_date
-        self.total_price = self.calculate_final_price()
-        super().save(update_fields=['actual_check_out_date', 'check_out_date', 'total_price', 'updated_at'])
-        
-        # Cập nhật trạng thái phòng về available nếu không còn booking chưa hoàn tất
-        for room in self.rooms.all():
-            active_bookings = room.bookings.filter(
-                status__in=['pending', 'confirmed', 'checked_in']
-            ).exclude(id=self.booking.id if self.booking else None)
-            if not active_bookings.exists():
-                room.status = 'available'
-                room.save(update_fields=['status'])
+        if self.actual_check_out_date:
+            raise ValidationError("Phiếu thuê phòng này đã được check-out.")
 
-        # Cập nhật trạng thái booking nếu có
-        if self.booking:
-            self.booking.status = BookingStatus.CHECKED_OUT
-            self.booking.save(update_fields=['status', 'updated_at'])
+        self.actual_check_out_date = timezone.now()  # Ví dụ: 21:00 05/08/2025
+        final_price = self.calculate_final_price()
+        self.total_price = final_price
+        self.save()
 
+        # Tạo thanh toán nếu chưa có
         self.finalize_payment()
-
+    
         return self.total_price
 
     def finalize_payment(self):
