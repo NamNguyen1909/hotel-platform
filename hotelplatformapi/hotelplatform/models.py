@@ -240,11 +240,7 @@ class Booking(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
-        # Chỉ cập nhật trạng thái phòng về 'booked' nếu booking chưa checked_out/cancelled
-        if self.status not in ['checked_out', 'cancelled']:
-            for room in self.rooms.all():
-                room.status = 'booked'
-                room.save()
+        # Note: Trạng thái phòng sẽ được cập nhật qua signals
         # Note: Customer stats sẽ được cập nhật qua signals
 
     def generate_qr_code(self):

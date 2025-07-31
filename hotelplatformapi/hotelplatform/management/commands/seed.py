@@ -107,7 +107,7 @@ class Command(BaseCommand):
                     room_number=room_number,
                     defaults={
                         'room_type': random.choice(room_types),
-                        'status': random.choice(['available', 'available', 'available', 'booked', 'occupied']),  # Bias towards available
+                        'status': 'available',  # Tất cả phòng bắt đầu với trạng thái available
                     }
                 )
 
@@ -244,17 +244,30 @@ class Command(BaseCommand):
                 )
 
     def create_current_bookings(self):
-        """Tạo booking hiện tại và tương lai"""
+        """Tạo booking hiện tại và tương lai - để signals tự động cập nhật trạng thái phòng"""
         customers = list(UserModel.objects.filter(role='customer'))
-        rooms = list(Room.objects.filter(status='available'))
+        available_rooms = list(Room.objects.filter(status='available'))
         
-        # Booking trong tương lai (pending, confirmed) - chỉ trong vòng 28 ngày
-        for i in range(15):
+        # Tính toán số lượng booking hợp lý để có đa dạng trạng thái:
+        # - Khoảng 10-15% phòng sẽ có booking pending/confirmed (status = booked)
+        # - Khoảng 5-10% phòng sẽ có booking checked_in (status = occupied)  
+        # - Còn lại 75-85% phòng sẽ giữ trạng thái available
+        
+        total_rooms = len(available_rooms)
+        
+        # Booking trong tương lai (pending, confirmed) - 10-15% tổng số phòng
+        future_bookings_count = int(total_rooms * 0.10) + random.randint(0, int(total_rooms * 0.05))
+        
+        for i in range(min(future_bookings_count, len(available_rooms))):
+            if len(available_rooms) < 1:
+                break
+                
             customer = random.choice(customers)
-            check_in = timezone.now() + timedelta(days=random.randint(1, 27))  # Tối đa 27 ngày để tránh lỗi validation
+            check_in = timezone.now() + timedelta(days=random.randint(1, 27))
             check_out = check_in + timedelta(days=random.randint(1, 5))
             
-            room_sample = random.sample(rooms, k=random.randint(1, 2))
+            # Chỉ lấy 1 phòng để tối ưu số lượng
+            room_sample = [random.choice(available_rooms)]
             
             # Tính giá dựa trên số ngày và giá phòng thực tế
             stay_days = (check_out.date() - check_in.date()).days
@@ -265,24 +278,41 @@ class Command(BaseCommand):
             for room in room_sample:
                 total_price += room.room_type.base_price * stay_days
             
+            booking_status = random.choice([BookingStatus.PENDING, BookingStatus.CONFIRMED])
             booking = Booking.objects.create(
                 customer=customer,
                 check_in_date=check_in,
                 check_out_date=check_out,
                 total_price=total_price,
                 guest_count=random.randint(1, 3),
-                status=random.choice([BookingStatus.PENDING, BookingStatus.CONFIRMED]),
+                status=booking_status,
                 special_requests=fake.text(max_nb_chars=50) if random.choice([True, False]) else None,
             )
             booking.rooms.set(room_sample)
+            
+            # Loại bỏ các phòng đã được đặt khỏi danh sách available
+            # (Signals sẽ tự động cập nhật trạng thái phòng thành 'booked')
+            for room in room_sample:
+                if room in available_rooms:
+                    available_rooms.remove(room)
         
-        # Booking hiện tại (checked_in)
-        for i in range(8):
+        # Booking hiện tại (checked_in) - 5-10% tổng số phòng
+        current_bookings_count = int(total_rooms * 0.05) + random.randint(0, int(total_rooms * 0.05))
+        
+        for i in range(min(current_bookings_count, len(available_rooms))):
+            if not available_rooms:
+                break
+                
             customer = random.choice(customers)
             check_in = timezone.now() - timedelta(days=random.randint(0, 3))
             check_out = timezone.now() + timedelta(days=random.randint(1, 4))
             
-            room_sample = random.sample(rooms, k=random.randint(1, 2))
+            # Chỉ lấy 1 phòng để tối ưu số lượng
+            room_sample = [random.choice(available_rooms)]
+            
+            # Loại bỏ khỏi danh sách available
+            for room in room_sample:
+                available_rooms.remove(room)
             
             # Tính giá dựa trên số ngày và giá phòng thực tế
             stay_days = (check_out.date() - check_in.date()).days
@@ -302,6 +332,7 @@ class Command(BaseCommand):
                 status=BookingStatus.CHECKED_IN,
             )
             booking.rooms.set(room_sample)
+            # Signals sẽ tự động cập nhật trạng thái phòng thành 'occupied'
             
             # Tạo RoomRental cho checked_in bookings
             rental = RoomRental.objects.create(
@@ -357,3 +388,30 @@ class Command(BaseCommand):
         for customer in customers:
             customer.update_customer_type()
         self.stdout.write(f'Updated stats for {customers.count()} customers.')
+        
+        # Hiển thị phân phối trạng thái phòng
+        self.show_room_status_distribution()
+    
+    def show_room_status_distribution(self):
+        """Hiển thị phân phối trạng thái phòng sau khi seed"""
+        from django.db.models import Count
+        
+        room_stats = Room.objects.values('status').annotate(count=Count('status')).order_by('status')
+        total_rooms = Room.objects.count()
+        
+        self.stdout.write('\n' + '='*50)
+        self.stdout.write(self.style.SUCCESS('PHÂN PHỐI TRẠNG THÁI PHÒNG:'))
+        self.stdout.write('='*50)
+        
+        for stat in room_stats:
+            percentage = (stat['count'] / total_rooms) * 100 if total_rooms > 0 else 0
+            status_display = {
+                'available': 'Trống',
+                'booked': 'Đã đặt', 
+                'occupied': 'Đang sử dụng'
+            }.get(stat['status'], stat['status'])
+            
+            self.stdout.write(f"• {status_display}: {stat['count']} phòng ({percentage:.1f}%)")
+        
+        self.stdout.write(f"\nTổng cộng: {total_rooms} phòng")
+        self.stdout.write('='*50)
