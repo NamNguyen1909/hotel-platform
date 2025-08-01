@@ -567,33 +567,35 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         booking.status = BookingStatus.CANCELLED
         booking.save()
         
-        # Giải phóng phòng
-        for room in booking.rooms.all():
-            room.status = 'available'
-            room.save()
-        
         return Response(BookingDetailSerializer(booking).data)
 
     @action(detail=True, methods=['post'])
     def checkin(self, request, pk=None):
-        """Check-in khách tại quầy (chỉ staff)"""
+        """Check-in khách tại quầy (chỉ staff) cho đặt trước"""
         booking = get_object_or_404(Booking, pk=pk)
-        
+
         if booking.status != BookingStatus.CONFIRMED:
             return Response({"error": "Booking chưa được xác nhận hoặc đã check-in"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Lấy actual_guest_count từ request data nếu có
-        actual_guest_count = request.data.get('actual_guest_count', None)
-        try:
-            rental = booking.check_in(actual_guest_count=actual_guest_count)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        
-        return Response({
-            "message": "Check-in thành công",
-            "rental": RoomRentalDetailSerializer(rental).data,
-            "booking": BookingDetailSerializer(booking).data
-        })
+
+        # Validate thời gian check-in
+        now = timezone.now()
+        if now < booking.check_in_date:
+            return Response({"error": "Chưa đến thời gian check-in dự kiến"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Lấy actual_guest_count từ request
+        actual_guest_count = request.data.get('actual_guest_count')
+
+        # Cập nhật trạng thái
+        with transaction.atomic():
+            booking.status = BookingStatus.CHECKED_IN
+            if actual_guest_count:
+                booking.guest_count = actual_guest_count
+            booking.save()
+
+            return Response({
+                "message": "Check-in đặt trước thành công",
+                "booking": BookingDetailSerializer(booking).data
+            })
 
 
 class RoomRentalViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
@@ -649,17 +651,30 @@ class RoomRentalViewSet(viewsets.ViewSet, generics.ListAPIView, generics.Retriev
             return [CanCheckOut()]
         return [IsAuthenticated()]
 
+    @action(detail=False, methods=['post'], permission_classes=[CanManageBookings])
+    def create_manual_rental(self, request):
+        """Tạo RoomRental thủ công khi khách nhận phòng thực tế"""
+        serializer = RoomRentalSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            with transaction.atomic():
+                rental = serializer.save(check_in_date=timezone.now())  # Ghi nhận thời gian nhận phòng thực tế
+                return Response(RoomRentalDetailSerializer(rental).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
     @action(detail=True, methods=['post'])
     def checkout(self, request, pk=None):
+        """Check-out khách thực tế tại quầy (chỉ staff)"""
         rental = get_object_or_404(RoomRental, pk=pk)
         try:
             with transaction.atomic():
-                # Gọi phương thức check_out từ model
-                total_price = rental.check_out()
-                payment = rental.payments.last()  # lấy payment vừa tạo
+                # Ghi nhận thời gian trả phòng thực tế
+                rental.actual_check_out_date = timezone.now()  # Ví dụ: 21:00 05/08/2025
+                rental.save()  # Gọi save() để serializer xử lý logic check-out
+
+                payment = rental.payments.last()  # Lấy payment vừa tạo
 
                 return Response({
-                    "message": "Check-out thành công",
+                    "message": "Check-out thực tế thành công",
                     "rental": RoomRentalDetailSerializer(rental).data,
                     "total_price": str(total_price),
                     "payment": PaymentSerializer(payment).data if payment else None
@@ -814,70 +829,65 @@ class NotificationViewSet(viewsets.ViewSet, generics.ListAPIView, generics.Retri
 
 # ================================ QR CODE & CHECK-IN ================================
 
-class QRCodeScanView(APIView):
+class QRCodePaymentView(APIView):
     """
-    API để scan QR code và thực hiện check-in
+    API để quét QR code và xử lý thanh toán hóa đơn
     """
-    permission_classes = [CanCheckIn]
+    permission_classes = [IsCustomerUser]
 
     def post(self, request):
         """
-        Scan QR code và tạo RoomRental
-        
-        Workflow:
-        1. Scan QR code → lấy uuid
-        2. Tìm booking theo uuid
-        3. Validate booking (confirmed, chưa check-in)
-        4. Tạo RoomRental với thông tin thực tế
-        5. Cập nhật booking status
+        Quét QR code để thanh toán:
+        1. Lấy uuid từ QR code
+        2. Tìm booking và RoomRental liên kết
+        3. Tạo Payment và xử lý thanh toán
         """
         uuid_str = request.data.get('uuid')
-        actual_guest_count = request.data.get('actual_guest_count')
-        
+        payment_method = request.data.get('payment_method', 'vnpay')
+
         if not uuid_str:
             return Response({"error": "Cần cung cấp UUID từ QR code"}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         try:
-            # Tìm booking theo UUID
             booking = Booking.objects.get(uuid=uuid_str)
-            
-            # Validate booking
-            if booking.status != BookingStatus.CONFIRMED:
-                return Response({"error": "Booking chưa được xác nhận hoặc đã check-in"}, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Validate thời gian check-in
-            now = timezone.now()
-            if now < booking.check_in_date:
-                return Response({"error": "Chưa đến thời gian check-in"}, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Tạo RoomRental
+            rental = RoomRental.objects.filter(booking=booking).first()
+            if not rental:
+                return Response({"error": "Không tìm thấy phiếu thuê phòng liên kết"}, status=status.HTTP_400_BAD_REQUEST)
+
+            payment = rental.payments.filter(status=False).first()
+            if payment:
+                return Response({"error": "Hóa đơn đang chờ thanh toán"}, status=status.HTTP_400_BAD_REQUEST)
+
             with transaction.atomic():
-                rental = RoomRental.objects.create(
-                    booking=booking,
-                    customer=booking.customer,
-                    check_out_date=booking.check_out_date,
-                    total_price=booking.total_price,
-                    guest_count=actual_guest_count or booking.guest_count,
+                payment = Payment.objects.create(
+                    rental=rental,
+                    customer=rental.customer,
+                    amount=rental.total_price,
+                    payment_method=payment_method,
+                    status=False,
+                    transaction_id=f"TRANS-{timezone.now().strftime('%Y%m%d%H%M%S')}"
                 )
-                
-                # Thêm rooms vào rental
-                rental.rooms.set(booking.rooms.all())
-                
-                # Cập nhật booking status
-                booking.status = BookingStatus.CHECKED_IN
-                booking.save()
-                
-                # Cập nhật room status
-                for room in booking.rooms.all():
-                    room.status = 'occupied'
-                    room.save()
-                
+
+                if payment_method.lower() == 'vnpay':
+                    request.GET = request.GET.copy()
+                    request.GET['amount'] = str(rental.total_price)
+                    payment_response = create_payment_url(request)
+                    payment_url = payment_response.json['payment_url']
+                    return Response({
+                        "message": "Yêu cầu thanh toán được tạo",
+                        "payment": PaymentSerializer(payment).data,
+                        "payment_url": payment_url
+                    })
+
+                payment.status = True
+                payment.paid_at = timezone.now()
+                payment.save()
+
                 return Response({
-                    "message": "Check-in thành công",
-                    "rental": RoomRentalDetailSerializer(rental).data,
-                    "booking": BookingDetailSerializer(booking).data
+                    "message": "Thanh toán thành công",
+                    "payment": PaymentSerializer(payment).data
                 })
-        
+
         except Booking.DoesNotExist:
             return Response({"error": "Không tìm thấy booking với UUID này"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
@@ -1212,53 +1222,41 @@ def vnpay_response_message(code):
 
 def vnpay_redirect(request):
     """
-    Xử lý callback từ VNPay về sau khi thanh toán.
-    Nếu truy cập từ app (from=app), trả về HTML vừa gửi postMessage về FE, vừa hiển thị giao diện đẹp cho user.
-    Nếu truy cập từ web, trả về deeplink hoặc giao diện web.
+    Xử lý callback từ VNPay sau khi thanh toán.
     """
     from_app = request.GET.get('from') == 'app'
     vnp_ResponseCode = request.GET.get('vnp_ResponseCode')
-    # ... lấy các tham số khác nếu cần
+    vnp_TxnRef = request.GET.get('vnp_TxnRef')
 
     if vnp_ResponseCode is None:
         return HttpResponse("Thiếu tham số vnp_ResponseCode.", status=400)
 
     message = vnpay_response_message(vnp_ResponseCode)
 
+    try:
+        payment = Payment.objects.get(transaction_id=vnp_TxnRef)
+        if vnp_ResponseCode == '00':
+            payment.status = True
+            payment.paid_at = timezone.now()
+            payment.save()
+        else:
+            payment.status = False
+            payment.save()
+    except Payment.DoesNotExist:
+        pass
+
     if from_app:
-        # Kết hợp: vừa gửi postMessage về FE, vừa render giao diện đẹp
         return HttpResponse(f"""
             <html>
             <head>
                 <meta charset="utf-8"/>
                 <style>
-                    body {{
-                        background: #f5f6fa;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        height: 100vh;
-                        margin: 0;
-                    }}
-                    .result-box {{
-                        background: #fff;
-                        border-radius: 12px;
-                        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-                        padding: 32px 48px;
-                        text-align: center;
-                    }}
-                    .result-title {{
-                        color: #2d8cf0;
-                        font-size: 3rem;
-                        margin-bottom: 12px;
-                    }}
-                    .result-message {{
-                        color: #333;
-                        font-size: 1.7rem;
-                    }}
+                    body {{ background: #f5f6fa; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
+                    .result-box {{ background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); padding: 32px 48px; text-align: center; }}
+                    .result-title {{ color: #2d8cf0; font-size: 3rem; margin-bottom: 12px; }}
+                    .result-message {{ color: #333; font-size: 1.7rem; }}
                 </style>
                 <script>
-                // Gửi callback về FE qua postMessage để app luôn nhận được kết quả
                 setTimeout(function() {{
                     if (window.ReactNativeWebView) {{
                         window.ReactNativeWebView.postMessage(JSON.stringify({{
@@ -1278,7 +1276,6 @@ def vnpay_redirect(request):
             </html>
         """)
     else:
-        # Nếu không phải từ app, trả về deeplink hoặc giao diện web
         deeplink = f"bemmobile://payment-result?vnp_ResponseCode={vnp_ResponseCode}&message={urllib.parse.quote(message)}"
         return redirect(deeplink)
 

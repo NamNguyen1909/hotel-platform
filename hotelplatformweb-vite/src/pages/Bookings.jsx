@@ -108,11 +108,9 @@ const Bookings = () => {
 
         // Xử lý dữ liệu từ API
         const fetchedBookings = (response.data.results || []).map((booking) => {
-          // Lấy thông tin khách hàng từ customer_name và customer_phone
           const customerName = booking.customer_name;
           const customerPhone = booking.customer_phone || 'N/A';
 
-          // Debug nếu thiếu thông tin khách hàng
           if (!customerName) {
             console.warn(`Booking ID ${booking.id} thiếu tên khách hàng:`, {
               booking: booking,
@@ -136,7 +134,6 @@ const Bookings = () => {
           };
         });
 
-        // Kiểm tra và hiển thị cảnh báo nếu có booking thiếu thông tin
         if (fetchedBookings.some((b) => !b.customer_name || b.customer_name === 'Khách hàng không xác định')) {
           setError(
             'Cảnh báo: Một số booking thiếu tên khách hàng. Vui lòng kiểm tra dữ liệu từ hệ thống.'
@@ -172,7 +169,7 @@ const Bookings = () => {
   // Xử lý tìm kiếm
   const handleSearch = (event) => {
     setSearchTerm(event.target.value);
-    setPaginationModel((prev) => ({ ...prev, page: 0 })); // Reset về trang đầu
+    setPaginationModel((prev) => ({ ...prev, page: 0 }));
   };
 
   // Mở dialog xác nhận
@@ -195,9 +192,42 @@ const Bookings = () => {
   const handleCheckIn = async (bookingId) => {
     try {
       const booking = bookings.find((b) => b.id === bookingId);
+      if (!booking) {
+        setError('Không tìm thấy booking.');
+        return;
+      }
+
+      // Kiểm tra trạng thái booking
+      if (booking.status !== 'confirmed') {
+        setError('Booking chưa được xác nhận, không thể check-in.');
+        return;
+      }
+
+      // Kiểm tra guest_count
+      if (!Number.isInteger(booking.guest_count) || booking.guest_count <= 0) {
+        setError('Số khách không hợp lệ.');
+        return;
+      }
+
+      // Kiểm tra token trước khi gửi yêu cầu
+      const token = localStorage.getItem('access_token');
+      console.log('Access token for check-in:', token); // Debug token
+      if (!token) {
+        setError('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
+        authUtils.clearTokens();
+        navigate('/login');
+        return;
+      }
+
+      console.log('Sending check-in request:', {
+        bookingId,
+        actual_guest_count: booking.guest_count,
+      });
+
       const response = await api.post(endpoints.bookings.checkin(bookingId), {
         actual_guest_count: booking.guest_count,
       });
+
       setBookings((prev) =>
         prev.map((booking) =>
           booking.id === bookingId
@@ -207,7 +237,18 @@ const Bookings = () => {
       );
       setError(null);
     } catch (err) {
-      setError(`Không thể thực hiện check-in: ${err.response?.data?.error || err.message}`);
+      console.error('Check-in error:', {
+        status: err.response?.status,
+        data: err.response?.data,
+        message: err.message,
+      });
+      if (err.response?.status === 401) {
+        setError('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
+        authUtils.clearTokens();
+        navigate('/login');
+      } else {
+        setError(`Không thể thực hiện check-in: ${err.response?.data?.error || err.message}`);
+      }
     }
   };
 
