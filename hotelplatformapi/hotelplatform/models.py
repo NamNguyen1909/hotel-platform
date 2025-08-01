@@ -229,50 +229,15 @@ class Booking(models.Model):
                 raise ValidationError("Ngày nhận phòng phải trước ngày trả phòng.")
             if self.check_in_date > timezone.now() + timedelta(days=28):
                 raise ValidationError("Ngày nhận phòng không được vượt quá 28 ngày kể từ thời điểm đặt.")
-
-        # Nếu chưa có rooms, không kiểm tra
-        if not self.rooms.exists():
-            return
-
-        # Kiểm tra phòng
-        for room in self.rooms.all():
-            # Kiểm tra số lượng khách
-            if self.guest_count > room.room_type.max_guests:
-                raise ValidationError(f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách.")
-
-            # Kiểm tra trạng thái phòng chỉ khi tạo mới Booking
-            if not self.pk and room.status != 'available':
-                raise ValidationError(f"Phòng {room.room_number} không khả dụng để tạo mới đặt phòng (trạng thái: {room.status}).")
-
-            # Kiểm tra xung đột thời gian với các Booking khác
-            overlapping_bookings = Booking.objects.filter(
-                rooms=room,
-                status__in=['pending', 'confirmed', 'checked_in'],
-                check_in_date__lte=self.check_out_date,
-                check_out_date__gte=self.check_in_date
-            ).exclude(pk=self.pk)
-            if overlapping_bookings.exists():
-                conflicting_booking = overlapping_bookings.first()
-                raise ValidationError(
-                    f"Phòng {room.room_number} không khả dụng do đã được đặt bởi Booking ID {conflicting_booking.id} "
-                    f"từ {conflicting_booking.check_in_date} đến {conflicting_booking.check_out_date}."
-                )
-
-            # Kiểm tra xung đột thời gian với RoomRental
-            overlapping_rentals = RoomRental.objects.filter(
-                rooms=room,
-                check_in_date__lte=self.check_out_date,
-                check_out_date__gte=self.check_in_date
-            )
-            if overlapping_rentals.exists():
-                conflicting_rental = overlapping_rentals.first()
-                raise ValidationError(
-                    f"Phòng {room.room_number} không khả dụng do đã được thuê bởi Rental ID {conflicting_rental.id} "
-                    f"từ {conflicting_rental.check_in_date} đến {conflicting_rental.check_out_date}."
-                )
+        # Kiểm tra số lượng khách
+        if self.guest_count <= 0:
+            raise ValidationError("Số lượng khách phải lớn hơn 0.")
+        # Không kiểm tra rooms trong clean() để tránh lỗi many-to-many
 
     def save(self, *args, **kwargs):
-        self.full_clean()
+        # Chỉ gọi full_clean() nếu không phải force_insert (dùng trong seed.py)
+        if not kwargs.get('force_insert', False):
+            self.full_clean()
         super().save(*args, **kwargs)
         # Note: Trạng thái phòng sẽ được cập nhật qua signals
         # Note: Customer stats sẽ được cập nhật qua signals
