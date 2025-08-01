@@ -6,7 +6,7 @@ from faker import Faker
 from hotelplatform.models import User, RoomType, Room, Booking, RoomRental, Payment, DiscountCode, Notification, RoomImage, BookingStatus
 from django.contrib.auth import get_user_model
 from decimal import Decimal
-from datetime import datetime, timedelta
+from datetime import timedelta
 from django.db import transaction
 
 fake = Faker('vi_VN')
@@ -256,15 +256,16 @@ class Command(BaseCommand):
         """Tạo booking hiện tại và tương lai, thêm dữ liệu kiểm thử check-in/check-out"""
         customers = list(UserModel.objects.filter(role='customer'))
         rooms = list(Room.objects.filter(status='available'))
-        current_time = timezone.datetime(2025, 7, 31, 23, 56, tzinfo=timezone.get_current_timezone())
+        current_time = timezone.now()  # Sử dụng thời gian hiện tại
 
-        # Booking tương lai (confirmed) - để kiểm thử check-in
+        # Booking hiện tại (confirmed) - để kiểm thử check-in
         confirmed_bookings_target = 5
         confirmed_bookings_created = 0
 
         while confirmed_bookings_created < confirmed_bookings_target and rooms:
             customer = random.choice(customers)
-            check_in = current_time + timedelta(days=random.randint(1, 27), hours=random.randint(14, 18))
+            # Đặt check_in_date là hôm nay hoặc hôm qua để có thể check-in ngay
+            check_in = current_time - timedelta(days=random.randint(0, 1), hours=random.randint(0, 6))
             check_out = check_in + timedelta(days=random.randint(1, 5), hours=random.randint(10, 12))
 
             available_rooms = [r for r in rooms if self.is_room_available([r], check_in, check_out)]
@@ -354,7 +355,7 @@ class Command(BaseCommand):
         rooms = list(Room.objects.filter(status='available'))
         walk_in_rentals_target = 3
         walk_in_rentals_created = 0
-        current_time = timezone.datetime(2025, 7, 31, 23, 56, tzinfo=timezone.get_current_timezone())
+        current_time = timezone.now()  # Sử dụng thời gian hiện tại
 
         while walk_in_rentals_created < walk_in_rentals_target and rooms:
             customer = random.choice(customers)

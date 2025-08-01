@@ -582,20 +582,33 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         if now < booking.check_in_date:
             return Response({"error": "Chưa đến thời gian check-in dự kiến"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Kiểm tra trạng thái phòng
+        for room in booking.rooms.all():
+            if room.status not in ['booked', 'available']:
+                logger.warning(f"Phòng {room.room_number} có trạng thái không hợp lệ: {room.status}")
+                return Response(
+                    {"error": f"Phòng {room.room_number} không khả dụng (trạng thái: {room.status})"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
         # Lấy actual_guest_count từ request
         actual_guest_count = request.data.get('actual_guest_count')
 
         # Cập nhật trạng thái
         with transaction.atomic():
-            booking.status = BookingStatus.CHECKED_IN
-            if actual_guest_count:
-                booking.guest_count = actual_guest_count
-            booking.save()
-
-            return Response({
-                "message": "Check-in đặt trước thành công",
-                "booking": BookingDetailSerializer(booking).data
-            })
+            try:
+                booking.status = BookingStatus.CHECKED_IN
+                if actual_guest_count:
+                    booking.guest_count = actual_guest_count
+                booking.save()
+                logger.info(f"Check-in thành công cho Booking {booking.id}, phòng: {[room.room_number for room in booking.rooms.all()]}")
+                return Response({
+                    "message": "Check-in đặt trước thành công",
+                    "booking": BookingDetailSerializer(booking).data
+                })
+            except ValidationError as e:
+                logger.error(f"Lỗi khi check-in Booking {booking.id}: {str(e)}")
+                return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class RoomRentalViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
