@@ -7,6 +7,14 @@ from .models import Booking, BookingStatus, Notification, RoomRental, Payment
 User = get_user_model()
 
 
+# Django M2M signal actions
+# action == "pre_add"     # Trước khi thêm relation
+# action == "post_add"    # Sau khi thêm relation  
+# action == "pre_remove"  # Trước khi xóa relation
+# action == "post_remove" # Sau khi xóa relation
+# action == "pre_clear"   # Trước khi clear toàn bộ
+# action == "post_clear"  # Sau khi clear toàn bộ
+
 @receiver(post_migrate)
 def create_superuser(sender, **kwargs):
     """
