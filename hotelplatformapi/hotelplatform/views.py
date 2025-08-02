@@ -17,6 +17,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.views import APIView
 from rest_framework.filters import SearchFilter, OrderingFilter
+from rest_framework.exceptions import ValidationError
 # from django_filters.rest_framework import DjangoFilterBackend
 
 
@@ -43,7 +44,8 @@ from .permissions import (
     IsBookingOwner, IsRoomRentalOwner, IsPaymentOwner, IsNotificationOwner, CanManageRooms,
     CanManageBookings, CanManagePayments, CanCreateDiscountCode, CanViewStats, CanCheckIn,
     CanCheckOut, CanConfirmBooking, CanGenerateQRCode, CanUpdateProfile, CanCancelUpdateBooking,
-    CanCreateNotification, CanModifyRoomType, CanManageCustomers, CanManageStaff, CanAccessAllBookings
+    CanCreateNotification, CanModifyRoomType, CanManageCustomers, CanManageStaff, CanAccessAllBookings,
+    CanCreateBooking
 )
 from .paginators import ItemPaginator, UserPaginator, RoomPaginator, RoomTypePaginator
 
@@ -431,6 +433,13 @@ class RoomViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
+        if not available_rooms.exists():
+            message = f"No available rooms found from {check_in} to {check_out}."
+            return Response({
+                "message": message,
+                "data": []
+            })
+
         serializer = RoomSerializer(available_rooms, many=True)
         return Response(serializer.data)
 
@@ -514,6 +523,8 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
             return [CanAccessAllBookings()]
+        elif self.action == 'create':
+            return [CanCreateBooking()]
         elif self.action in ['confirm', 'checkin']:
             return [CanConfirmBooking()]
         elif self.action in ['cancel', 'update', 'partial_update']:
@@ -522,12 +533,31 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
 
     def create(self, request):
         """Tạo booking mới"""
+        logger.info(f"Booking creation requested by user {request.user.id}")
         serializer = BookingSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             booking = serializer.save()
-            booking.generate_qr_code()
-            return Response(BookingDetailSerializer(booking).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            logger.info(f"Booking {booking.id} created successfully for user {request.user.id}")
+            
+            # Prepare response data
+            response_data = BookingDetailSerializer(booking).data
+            
+            # Add discount info if discount was applied
+            if hasattr(booking, 'discount_applied') and booking.discount_applied:
+                # Calculate the original price before discount
+                original_price = booking.total_price / (1 - booking.discount_applied.discount_percentage / 100)
+                amount_saved = original_price - booking.total_price
+                discount_info = {
+                    'code': booking.discount_applied.code,
+                    'discount_percentage': booking.discount_applied.discount_percentage,
+                    'amount_saved': float(amount_saved)
+                }
+                response_data['discount_info'] = discount_info
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
+        else:
+            logger.error(f"Booking creation failed for user {request.user.id}: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def update(self, request, pk=None):
         """Cập nhật booking"""
@@ -537,7 +567,23 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         serializer = BookingSerializer(booking, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             booking = serializer.save()
-            return Response(BookingDetailSerializer(booking).data)
+            
+            # Prepare response data
+            response_data = BookingDetailSerializer(booking).data
+            
+            # Add discount info if discount was applied
+            if hasattr(booking, 'discount_applied') and booking.discount_applied:
+                # Calculate the original price before discount
+                original_price = booking.total_price / (1 - booking.discount_applied.discount_percentage / 100)
+                amount_saved = original_price - booking.total_price
+                discount_info = {
+                    'code': booking.discount_applied.code,
+                    'discount_percentage': booking.discount_applied.discount_percentage,
+                    'amount_saved': float(amount_saved)
+                }
+                response_data['discount_info'] = discount_info
+            
+            return Response(response_data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 

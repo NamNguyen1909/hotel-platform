@@ -1,6 +1,7 @@
 from datetime import timedelta
 from rest_framework import serializers
 from rest_framework.serializers import ModelSerializer
+from rest_framework.exceptions import ValidationError
 from .models import (
     User, RoomType, Room, Booking, RoomRental, Payment, DiscountCode, Notification, RoomImage
 )
@@ -251,10 +252,11 @@ class BookingSerializer(ModelSerializer):
         fields = [
             'id', 'customer', 'customer_name', 'customer_phone', 'customer_email',
             'rooms', 'room_details', 'check_in_date', 'check_out_date', 'total_price',
-            'guest_count', 'status', 'special_requests', 'qr_code', 'created_at', 'updated_at', 'uuid'
+            'guest_count', 'status', 'special_requests', 'qr_code', 'created_at', 'updated_at', 'uuid', 'discount_code'
         ]
         read_only_fields = ['id', 'customer_name', 'customer_phone', 'customer_email', 'created_at', 'updated_at', 'uuid']
         extra_kwargs = {
+            'customer': {'required': False},
             'check_in_date': {'required': False},
             'check_out_date': {'required': False},
             'total_price': {'required': False},
@@ -268,6 +270,7 @@ class BookingSerializer(ModelSerializer):
         max_digits=12, decimal_places=2, min_value=Decimal('0'), required=False
     )
     guest_count = serializers.IntegerField(min_value=1, required=False)
+    discount_code = serializers.CharField(max_length=50, required=False, write_only=True)
 
     def validate(self, attrs):
         check_in_date = attrs.get('check_in_date')
@@ -275,25 +278,232 @@ class BookingSerializer(ModelSerializer):
         rooms = attrs.get('rooms', [])
         guest_count = attrs.get('guest_count')
         status = attrs.get('status')
+        discount_code = attrs.get('discount_code')
+        
+        # Get request from context
+        request = self.context.get('request')
+        customer = attrs.get('customer')
+
+        # 4. Check Booking status when creating and updating:
+        if self.instance:
+            # Updating existing booking
+            if self.instance.status not in ['pending', 'confirmed']:
+                raise serializers.ValidationError({
+                    "status": f"Trạng thái booking hiện tại là '{self.instance.status}', chỉ cho phép cập nhật khi trạng thái là 'pending' hoặc 'confirmed'."
+                })
+        else:
+            # Creating new booking
+            if status and status != 'pending':
+                raise serializers.ValidationError({
+                    "status": "Booking mới phải có trạng thái 'pending'."
+                })
 
         if check_in_date and check_out_date:
             if check_in_date >= check_out_date:
-                raise serializers.ValidationError("Ngày nhận phòng phải trước ngày trả phòng.")
+                raise serializers.ValidationError({
+                    "check_in_date": "Ngày nhận phòng phải trước ngày trả phòng.",
+                    "check_out_date": "Ngày trả phòng phải sau ngày nhận phòng."
+                })
             if check_in_date > timezone.now() + timedelta(days=28):
-                raise serializers.ValidationError("Ngày nhận phòng không được vượt quá 28 ngày kể từ thời điểm đặt.")
+                raise serializers.ValidationError({
+                    "check_in_date": "Ngày nhận phòng không được vượt quá 28 ngày kể từ thời điểm đặt."
+                })
 
         if rooms and guest_count:
             for room in rooms:
                 if room.status != 'available' and status != 'checked_in':
-                    raise serializers.ValidationError(f"Phòng {room.room_number} không khả dụng.")
+                    raise serializers.ValidationError({
+                        "rooms": f"Phòng {room.room_number} đã được đặt trong khoảng thời gian này."
+                    })
                 if guest_count > room.room_type.max_guests:
-                    raise serializers.ValidationError(f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách.")
+                    raise serializers.ValidationError({
+                        "guest_count": f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách."
+                    })
+                    
+            # Check for duplicate rooms within requested time period
+            if check_in_date and check_out_date:
+                for room in rooms:
+                    overlapping_bookings = Booking.objects.filter(
+                        rooms=room,
+                        check_in_date__lt=check_out_date,
+                        check_out_date__gt=check_in_date,
+                        status__in=['pending', 'confirmed', 'checked_in']  # Only check active bookings
+                    )
+                    # If updating existing booking, exclude current booking from check
+                    if self.instance:
+                        overlapping_bookings = overlapping_bookings.exclude(pk=self.instance.pk)
+                    
+                    if overlapping_bookings.exists():
+                        # Find overlapping date range for error message
+                        overlap = overlapping_bookings.first()
+                        overlap_start = max(check_in_date, overlap.check_in_date)
+                        overlap_end = min(check_out_date, overlap.check_out_date)
+                        raise serializers.ValidationError({
+                            "rooms": f"Phòng {room.room_number} đã được đặt trong khoảng thời gian từ {overlap_start.date()} đến {overlap_end.date()}."
+                        })
+
+        # Handle customer assignment based on user role
+        if request:
+            user = request.user
+            if user.role == 'customer':
+                # Customer must be the one making the booking
+                attrs['customer'] = user
+            else:
+                # Admin/Owner/Staff can create booking for any customer
+                if not customer:
+                    raise serializers.ValidationError({
+                        "customer": "Trường customer là bắt buộc đối với admin/owner/staff."
+                    })
+                attrs['customer'] = customer
+
+        # Calculate total price
+        if check_in_date and check_out_date and rooms and guest_count:
+            # Calculate number of days
+            days = (check_out_date - check_in_date).days
+            if days <= 0:
+                days = 1  # Minimum 1 day
+
+            # Calculate base price
+            total_price = Decimal('0')
+            for room in rooms:
+                room_type = room.room_type
+                base_price = room_type.base_price
+                
+                # Calculate price for the number of days
+                room_price = base_price * days
+                
+                # Add surcharge for extra guests
+                if guest_count > room_type.max_guests:
+                    extra_guests = guest_count - room_type.max_guests
+                    surcharge = base_price * (room_type.extra_guest_surcharge / 100) * extra_guests * days
+                    room_price += surcharge
+                
+                total_price += room_price
+            
+            # Apply discount if provided
+            if discount_code:
+                try:
+                    discount = DiscountCode.objects.get(code=discount_code)
+                    if discount.is_valid():
+                        discount_amount = total_price * (discount.discount_percentage / 100)
+                        total_price -= discount_amount
+                        attrs['discount_applied'] = discount
+                    else:
+                        raise serializers.ValidationError({
+                            "discount_code": "Mã giảm giá không hợp lệ hoặc đã hết hạn."
+                        })
+                except DiscountCode.DoesNotExist:
+                    raise serializers.ValidationError({
+                        "discount_code": "Mã giảm giá không tồn tại."
+                    })
+            
+            attrs['total_price'] = total_price
 
         return attrs
 
+    def create(self, validated_data):
+        # Remove discount_code as it's not a model field
+        discount_code = self.context['request'].data.get('discount_code')
+        validated_data.pop('discount_code', None)
+        # Get discount_applied but don't remove it yet
+        discount_applied = validated_data.pop('discount_applied', None)
+        # Remove rooms from validated_data to avoid direct assignment
+        rooms_data = validated_data.pop('rooms', None)
+    
+        # Create booking with transaction to avoid race conditions
+        with transaction.atomic():
+            booking = Booking.objects.create(**validated_data)
+        
+            # Set rooms for the booking
+            if rooms_data is not None:
+                booking.rooms.set(rooms_data)
+        
+            # Increase used_count when discount code is used
+            if discount_applied:
+                discount_applied.used_count = F('used_count') + 1
+                discount_applied.save(update_fields=["used_count"])
+                # Update the booking with the discount_applied
+                booking.discount_applied = discount_applied
+                booking.save()
+        
+            return booking
+
     def update(self, instance, validated_data):
         rooms_data = validated_data.pop('rooms', None)
+        request = self.context.get('request')
+        discount_code = request.data.get('discount_code') if request else None
+        discount_applied = validated_data.get('discount_applied')
+        
+        # Check if any of the fields that affect total_price have changed
+        fields_affecting_price = ['rooms', 'check_in_date', 'check_out_date', 'guest_count', 'discount_code']
+        price_affected = any(field in validated_data for field in fields_affecting_price)
+        
+        # If updating price-affecting fields, recalculate total_price
+        if price_affected:
+            # Get current values for calculation
+            check_in_date = validated_data.get('check_in_date', instance.check_in_date)
+            check_out_date = validated_data.get('check_out_date', instance.check_out_date)
+            rooms = rooms_data if rooms_data is not None else instance.rooms.all()
+            guest_count = validated_data.get('guest_count', instance.guest_count)
+            
+            # Recalculate total price
+            if check_in_date and check_out_date and rooms and guest_count:
+                # Calculate number of days
+                days = (check_out_date - check_in_date).days
+                if days <= 0:
+                    days = 1  # Minimum 1 day
+
+                # Calculate base price
+                total_price = Decimal('0')
+                for room in rooms:
+                    room_type = room.room_type
+                    base_price = room_type.base_price
+                    
+                    # Calculate price for the number of days
+                    room_price = base_price * days
+                    
+                    # Add surcharge for extra guests
+                    if guest_count > room_type.max_guests:
+                        extra_guests = guest_count - room_type.max_guests
+                        surcharge = base_price * (room_type.extra_guest_surcharge / 100) * extra_guests * days
+                        room_price += surcharge
+                    
+                    total_price += room_price
+                
+                # Apply discount if provided
+                if discount_code:
+                    try:
+                        discount = DiscountCode.objects.get(code=discount_code)
+                        if discount.is_valid():
+                            discount_amount = total_price * (discount.discount_percentage / 100)
+                            total_price -= discount_amount
+                            discount_applied = discount
+                        else:
+                            raise serializers.ValidationError({
+                                "discount_code": "Mã giảm giá không hợp lệ hoặc đã hết hạn."
+                            })
+                    except DiscountCode.DoesNotExist:
+                        raise serializers.ValidationError({
+                            "discount_code": "Mã giảm giá không tồn tại."
+                        })
+                
+                validated_data['total_price'] = total_price
+        
         with transaction.atomic():
+            # Update discount used_count if it changed
+            old_discount = instance.discount_applied
+            if old_discount != discount_applied:
+                # Decrease used_count of old discount if it exists
+                if old_discount:
+                    old_discount.used_count = F('used_count') - 1
+                    old_discount.save(update_fields=["used_count"])
+                
+                # Increase used_count of new discount if it exists
+                if discount_applied:
+                    discount_applied.used_count = F('used_count') + 1
+                    discount_applied.save(update_fields=["used_count"])
+            
+            # Update instance with validated data
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)
             if rooms_data is not None:
