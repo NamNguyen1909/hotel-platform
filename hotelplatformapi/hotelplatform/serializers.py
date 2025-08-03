@@ -226,7 +226,7 @@ class UserListSerializer(ModelSerializer):
 
         instance.save()
         instance.update_customer_type()
-        return user
+        return instance
 
 
 
@@ -236,24 +236,15 @@ class BookingSerializer(ModelSerializer):
     customer_phone = serializers.ReadOnlyField(source='customer.phone')
     customer_email = serializers.ReadOnlyField(source='customer.email')
     room_details = RoomSerializer(source='rooms', many=True, read_only=True)
-    qr_code = serializers.ReadOnlyField()
-
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        if instance.qr_code:
-            data['qr_code'] = instance.qr_code.url
-        else:
-            data['qr_code'] = None
-        return data
 
     class Meta:
         model = Booking
         fields = [
             'id', 'customer', 'customer_name', 'customer_phone', 'customer_email',
             'rooms', 'room_details', 'check_in_date', 'check_out_date', 'total_price',
-            'guest_count', 'status', 'special_requests', 'qr_code', 'created_at', 'updated_at', 'uuid'
+            'guest_count', 'status', 'special_requests', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'customer_name', 'customer_phone', 'customer_email', 'created_at', 'updated_at', 'uuid']
+        read_only_fields = ['id', 'customer_name', 'customer_phone', 'customer_email', 'created_at', 'updated_at']
         extra_kwargs = {
             'check_in_date': {'required': False},
             'check_out_date': {'required': False},
@@ -276,17 +267,46 @@ class BookingSerializer(ModelSerializer):
         guest_count = attrs.get('guest_count')
         status = attrs.get('status')
 
+        #  VALIDATION CƠ BẢN VỀ THỜI GIAN
         if check_in_date and check_out_date:
             if check_in_date >= check_out_date:
                 raise serializers.ValidationError("Ngày nhận phòng phải trước ngày trả phòng.")
             if check_in_date > timezone.now() + timedelta(days=28):
                 raise serializers.ValidationError("Ngày nhận phòng không được vượt quá 28 ngày kể từ thời điểm đặt.")
 
-        if rooms and guest_count:
+        #  VALIDATION CONFLICT THỜI GIAN - LOGIC CHÍNH NGĂN TRÙNG BOOKING
+        if rooms and check_in_date and check_out_date:
+            from .models import BookingStatus
+            
             for room in rooms:
-                if room.status != 'available' and status != 'checked_in':
-                    raise serializers.ValidationError(f"Phòng {room.room_number} không khả dụng.")
-                if guest_count > room.room_type.max_guests:
+                #  Kiểm tra trạng thái phòng cơ bản
+                if room.status == 'occupied':
+                    raise serializers.ValidationError(f"Phòng {room.room_number} đang được sử dụng.")
+                
+                #  KIỂM TRA CONFLICT THỜI GIAN VỚI CÁC BOOKING KHÁC
+                # Logic: Hai khoảng thời gian overlap nếu:
+                # - Booking khác bắt đầu trước khi chúng ta kết thúc: check_in_date__lt=check_out_date
+                # - Booking khác kết thúc sau khi chúng ta bắt đầu: check_out_date__gt=check_in_date
+                conflicting_bookings = room.bookings.filter(
+                    status__in=[BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN],
+                    check_in_date__lt=check_out_date,    # Booking khác bắt đầu trước khi ta kết thúc
+                    check_out_date__gt=check_in_date     # Booking khác kết thúc sau khi ta bắt đầu
+                )
+                
+                #  Loại trừ booking hiện tại nếu đang update (để không conflict với chính mình)
+                if self.instance:
+                    conflicting_bookings = conflicting_bookings.exclude(pk=self.instance.pk)
+                
+                #  Nếu có conflict, báo lỗi với thông tin chi tiết
+                if conflicting_bookings.exists():
+                    conflict_booking = conflicting_bookings.first()
+                    raise serializers.ValidationError(
+                        f"Phòng {room.room_number} đã được đặt từ {conflict_booking.check_in_date.strftime('%d/%m/%Y %H:%M')} "
+                        f"đến {conflict_booking.check_out_date.strftime('%d/%m/%Y %H:%M')} (Booking #{conflict_booking.id})"
+                    )
+                
+                # Kiểm tra số lượng khách
+                if guest_count and guest_count > room.room_type.max_guests:
                     raise serializers.ValidationError(f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách.")
 
         return attrs
@@ -418,14 +438,7 @@ class BookingDetailSerializer(ModelSerializer):
     customer = UserSerializer(read_only=True)
     room_details = RoomSerializer(source='rooms', many=True, read_only=True)
     rentals = RoomRentalSerializer(many=True, read_only=True)
-    
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        if instance.qr_code:
-            data['qr_code'] = instance.qr_code.url
-        else:
-            data['qr_code'] = None
-        return data
+
 
     def validate(self, attrs):
         check_in_date = attrs.get('check_in_date')
@@ -488,7 +501,7 @@ class BookingDetailSerializer(ModelSerializer):
         model = Booking
         fields = [
             'id', 'customer', 'rooms', 'room_details', 'check_in_date', 'check_out_date',
-            'total_price', 'guest_count', 'status', 'special_requests', 'qr_code',
+            'total_price', 'guest_count', 'status', 'special_requests',
             'created_at', 'updated_at', 'rentals'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'rentals']

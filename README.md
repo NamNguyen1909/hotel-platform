@@ -20,3 +20,8 @@ Django RESTful API cho backend (BE) và ReactJS với Material UI (dùng Vite, b
 python manage.py seed      
 ```
 Lệnh chạy seed.py: .\myvenv\Scripts\python.exe manage.py seed
+
+
+Thuật toán "fill largest rooms first" để giảm phụ thu
+Trả về detailed calculation với guest allocation
+base_price * (25/100) * số_khách_vượt_quá * số_ngày

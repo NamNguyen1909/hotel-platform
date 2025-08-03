@@ -5,7 +5,6 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.db.models import Sum
 from cloudinary.models import CloudinaryField
-import uuid
 from decimal import Decimal
 from datetime import timedelta
 import logging
@@ -198,8 +197,6 @@ class Booking(models.Model):
     guest_count = models.PositiveIntegerField(validators=[MinValueValidator(1)])  # Tối thiểu 1 khách
     status = models.CharField(max_length=20, choices=BookingStatus.choices, default=BookingStatus.PENDING)
     special_requests = models.TextField(null=True, blank=True)  # Yêu cầu đặc biệt
-    qr_code = CloudinaryField('qr_code', null=True, blank=True)  # Lưu mã QR
-    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, db_index=True)  # UUID cho QR code
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -216,7 +213,6 @@ class Booking(models.Model):
         ]
         indexes = [
             models.Index(fields=['customer', 'check_in_date']),
-            models.Index(fields=['uuid']),
         ]
 
     def __str__(self):
@@ -242,58 +238,9 @@ class Booking(models.Model):
         # Note: Trạng thái phòng sẽ được cập nhật qua signals
         # Note: Customer stats sẽ được cập nhật qua signals
 
-    def generate_qr_code(self):
-        """
-        Tạo QR code cho booking
-        """
-        import qrcode
-        import io
-        from cloudinary.uploader import upload
-        
-        # Tạo data cho QR code
-        qr_data = {
-            'uuid': str(self.uuid),
-            'booking_id': self.id,
-            'customer_name': self.customer.full_name,
-            'check_in_date': self.check_in_date.isoformat(),
-            'rooms': [room.room_number for room in self.rooms.all()]
-        }
-        
-        # Tạo QR code
-        qr = qrcode.QRCode(version=1, box_size=10, border=5)
-        qr.add_data(str(qr_data))
-        qr.make(fit=True)
-        
-        # Convert to image
-        img = qr.make_image(fill_color="black", back_color="white")
-        
-        # Save to BytesIO
-        buffer = io.BytesIO()
-        img.save(buffer, format='PNG')
-        buffer.seek(0)
-        
-        # Upload to Cloudinary
-        result = upload(buffer, folder="qr_codes", resource_type="image")
-        
-        # Save URL to model
-        self.qr_code = result['secure_url']
-        self.save()
-        
-        return result['secure_url']
-
     def check_in(self, actual_guest_count=None):
         """Phương thức này không còn được sử dụng vì check-in được xử lý qua API"""
         raise NotImplementedError("Check-in được xử lý qua API, không tạo RoomRental")
-
-    @classmethod
-    def get_by_uuid(cls, uuid_str):
-        """
-        Lấy booking theo UUID
-        """
-        try:
-            return cls.objects.get(uuid=uuid_str)
-        except cls.DoesNotExist:
-            return None
 
     def calculate_actual_price(self, actual_guest_count=None):
         """
@@ -317,12 +264,111 @@ class Booking(models.Model):
         
         return total_price
 
+    @classmethod
+    def calculate_price_for_multiple_rooms(cls, rooms, guest_count, stay_days):
+        """
+        Tính giá cho booking nhiều phòng với thuật toán phân bổ khách tối ưu
+        
+        Thuật toán:
+        1. Sắp xếp phòng theo max_guests giảm dần (phòng lớn trước)
+        2. Phân bổ tối đa cho mỗi phòng không vượt quá max_guests
+        3. Nếu còn khách dư, phân bổ đều tạo phụ thu
+        
+        Args:
+            rooms: Danh sách các Room objects
+            guest_count: Tổng số khách  
+            stay_days: Số ngày lưu trú
+            
+        Returns:
+            dict: {
+                'total_price': Decimal,
+                'guest_allocation': list,
+                'calculation_details': list
+            }
+        """
+        if not rooms or guest_count <= 0 or stay_days <= 0:
+            return {
+                'total_price': Decimal('0'),
+                'guest_allocation': [],
+                'calculation_details': []
+            }
+        
+        # Sắp xếp phòng theo max_guests giảm dần để ưu tiên phòng lớn trước
+        sorted_rooms = sorted(rooms, key=lambda r: r.room_type.max_guests, reverse=True)
+        
+        # Khởi tạo phân bổ khách
+        guest_allocation = [0] * len(sorted_rooms)
+        remaining_guests = guest_count
+        
+        # Bước 1: Phân bổ tối đa cho mỗi phòng không vượt quá max_guests
+        for i, room in enumerate(sorted_rooms):
+            max_guests = room.room_type.max_guests
+            allocated = min(remaining_guests, max_guests)
+            guest_allocation[i] = allocated
+            remaining_guests -= allocated
+            
+            if remaining_guests == 0:
+                break
+        
+        # Bước 2: Nếu còn khách dư, phân bổ đều cho các phòng (tạo phụ thu)
+        if remaining_guests > 0:
+            base_extra = remaining_guests // len(sorted_rooms)
+            extra_remainder = remaining_guests % len(sorted_rooms)
+            
+            for i in range(len(sorted_rooms)):
+                guest_allocation[i] += base_extra
+                if i < extra_remainder:
+                    guest_allocation[i] += 1
+        
+        # Tính giá cho từng phòng
+        total_price = Decimal('0')
+        calculation_details = []
+        
+        for i, room in enumerate(sorted_rooms):
+            room_guests = guest_allocation[i]
+            
+            # Tính giá cho phòng này
+            base_price = room.room_type.base_price
+            max_guests = room.room_type.max_guests
+            surcharge_rate = room.room_type.extra_guest_surcharge / 100
+            
+            if room_guests <= max_guests:
+                # Không vượt quá sức chứa
+                room_price = base_price
+                excess_guests = 0
+            else:
+                # Có phụ thu
+                excess_guests = room_guests - max_guests
+                surcharge = base_price * surcharge_rate * excess_guests
+                room_price = base_price + surcharge
+            
+            # Nhân với số ngày
+            total_room_price = room_price * stay_days
+            total_price += total_room_price
+            
+            calculation_details.append({
+                'room_number': room.room_number,
+                'room_type': room.room_type.name,
+                'guests': room_guests,
+                'max_guests': max_guests,
+                'excess_guests': excess_guests,
+                'base_price': base_price,
+                'room_price_per_day': room_price,
+                'total_room_price': total_room_price
+            })
+        
+        return {
+            'total_price': total_price,
+            'guest_allocation': guest_allocation,
+            'calculation_details': calculation_details
+        }
+
 # Phiếu thuê phòng
 class RoomRental(models.Model):
     booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='rentals', null=True, blank=True)
     customer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='rentals', limit_choices_to={'role': 'customer'})
     rooms = models.ManyToManyField(Room, related_name='rentals')
-    check_in_date = models.DateTimeField(auto_now_add=True)
+    check_in_date = models.DateTimeField()
     check_out_date = models.DateTimeField()
     actual_check_out_date = models.DateTimeField(null=True, blank=True)  # Ngày giờ thực tế khi checkout
     total_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0'))])
@@ -353,7 +399,10 @@ class RoomRental(models.Model):
                     raise ValidationError(f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách.")
 
     def save(self, *args, **kwargs):
-        self.full_clean()
+        # Chỉ gọi full_clean() nếu đây không phải là tạo mới từ objects.create()
+        # hoặc nếu đã có pk (đang update)
+        if self.pk or not getattr(self, '_state', {}).get('adding', True):
+            self.full_clean()
         super().save(*args, **kwargs)
 
     def check_out(self):
