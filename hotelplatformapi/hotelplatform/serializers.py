@@ -8,7 +8,7 @@ from .models import (
 from django.db import transaction
 from django.utils import timezone
 from django.db.models import F
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from cloudinary.utils import cloudinary_url
 
 
@@ -397,7 +397,7 @@ class BookingSerializer(ModelSerializer):
                         "discount_code": "Mã giảm giá không tồn tại."
                     })
             
-            attrs['total_price'] = total_price
+            attrs['total_price'] = total_price.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
         return attrs
 
