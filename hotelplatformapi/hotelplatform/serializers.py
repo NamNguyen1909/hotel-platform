@@ -31,15 +31,12 @@ class RoomImageSerializer(ModelSerializer):
         room = attrs.get('room')
         is_primary = attrs.get('is_primary', False)
         
-        # Nếu đánh dấu là ảnh chính và chưa có ảnh nào cho phòng này
         if is_primary and room:
-            # Kiểm tra xem đã có ảnh chính chưa (trừ ảnh hiện tại nếu đang update)
             existing_primary = room.images.filter(is_primary=True)
             if self.instance:
                 existing_primary = existing_primary.exclude(pk=self.instance.pk)
             
             if existing_primary.exists() and is_primary:
-                # Có thể cho phép, model sẽ tự động bỏ đánh dấu ảnh chính cũ
                 pass
         
         return attrs
@@ -62,16 +59,12 @@ class RoomSerializer(ModelSerializer):
     primary_image_url = serializers.SerializerMethodField()
     
     def get_primary_image_url(self, obj):
-        # Lấy URL ảnh chính của phòng
         primary_image_obj = obj.images.filter(is_primary=True).first()
         if primary_image_obj and primary_image_obj.image:
             return primary_image_obj.image.url
-        
-        # Nếu không có ảnh chính, lấy ảnh đầu tiên
         first_image_obj = obj.images.first()
         if first_image_obj and first_image_obj.image:
             return first_image_obj.image.url
-            
         return None
     
     class Meta:
@@ -122,6 +115,7 @@ class DiscountCodeSerializer(ModelSerializer):
             raise serializers.ValidationError("valid_from phải trước valid_to")
         return attrs
 
+
 # Serializer cho User
 class UserSerializer(ModelSerializer):
     password = serializers.CharField(write_only=True, required=True)
@@ -140,7 +134,6 @@ class UserSerializer(ModelSerializer):
     def create(self, validated_data):
         password = validated_data.pop('password')
         avatar = validated_data.pop('avatar', None)
-        # Loại bỏ các trường không thể chỉnh sửa
         validated_data.pop('is_active', None)
         validated_data.pop('customer_type', None)
         user = User(
@@ -175,6 +168,7 @@ class UserSerializer(ModelSerializer):
         instance.update_customer_type()
         return instance
 
+
 # Serializer cho danh sách User với thống kê
 class UserListSerializer(ModelSerializer):
     avatar = serializers.ImageField(required=False, allow_null=True)
@@ -193,42 +187,6 @@ class UserListSerializer(ModelSerializer):
         data = super().to_representation(instance)
         data['avatar'] = instance.avatar.url if instance.avatar else ''
         return data
-
-    def create(self, validated_data):
-        password = validated_data.pop('password')
-        avatar = validated_data.pop('avatar', None)
-        user = User(
-            username=validated_data['username'],
-            email=validated_data['email'],
-            full_name=validated_data.get('full_name'),
-            phone=validated_data.get('phone'),
-            id_card=validated_data.get('id_card'),
-            address=validated_data.get('address'),
-            role=validated_data.get('role', 'customer'),
-        )
-        user.set_password(password)  
-        if avatar:
-            user.avatar = avatar
-        user.save()
-        return user
-
-    def update(self, instance, validated_data):
-        password = validated_data.pop('password', None)
-        avatar = validated_data.pop('avatar', None)
-
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-
-        if password:
-            instance.set_password(password)  
-
-        if avatar is not None:
-            instance.avatar = avatar
-
-        instance.save()
-        instance.update_customer_type()
-        return user
-
 
 
 # Serializer cho Booking
@@ -280,19 +238,15 @@ class BookingSerializer(ModelSerializer):
         status = attrs.get('status')
         discount_code = attrs.get('discount_code')
         
-        # Get request from context
         request = self.context.get('request')
         customer = attrs.get('customer')
 
-        # 4. Check Booking status when creating and updating:
         if self.instance:
-            # Updating existing booking
             if self.instance.status not in ['pending', 'confirmed']:
                 raise serializers.ValidationError({
                     "status": f"Trạng thái booking hiện tại là '{self.instance.status}', chỉ cho phép cập nhật khi trạng thái là 'pending' hoặc 'confirmed'."
                 })
         else:
-            # Creating new booking
             if status and status != 'pending':
                 raise serializers.ValidationError({
                     "status": "Booking mới phải có trạng thái 'pending'."
@@ -320,21 +274,18 @@ class BookingSerializer(ModelSerializer):
                         "guest_count": f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách."
                     })
                     
-            # Check for duplicate rooms within requested time period
             if check_in_date and check_out_date:
                 for room in rooms:
                     overlapping_bookings = Booking.objects.filter(
                         rooms=room,
                         check_in_date__lt=check_out_date,
                         check_out_date__gt=check_in_date,
-                        status__in=['pending', 'confirmed', 'checked_in']  # Only check active bookings
+                        status__in=['pending', 'confirmed', 'checked_in']
                     )
-                    # If updating existing booking, exclude current booking from check
                     if self.instance:
                         overlapping_bookings = overlapping_bookings.exclude(pk=self.instance.pk)
                     
                     if overlapping_bookings.exists():
-                        # Find overlapping date range for error message
                         overlap = overlapping_bookings.first()
                         overlap_start = max(check_in_date, overlap.check_in_date)
                         overlap_end = min(check_out_date, overlap.check_out_date)
@@ -342,37 +293,29 @@ class BookingSerializer(ModelSerializer):
                             "rooms": f"Phòng {room.room_number} đã được đặt trong khoảng thời gian từ {overlap_start.date()} đến {overlap_end.date()}."
                         })
 
-        # Handle customer assignment based on user role
         if request:
             user = request.user
             if user.role == 'customer':
-                # Customer must be the one making the booking
                 attrs['customer'] = user
             else:
-                # Admin/Owner/Staff can create booking for any customer
                 if not customer:
                     raise serializers.ValidationError({
                         "customer": "Trường customer là bắt buộc đối với admin/owner/staff."
                     })
                 attrs['customer'] = customer
 
-        # Calculate total price
         if check_in_date and check_out_date and rooms and guest_count:
-            # Calculate number of days
             days = (check_out_date - check_in_date).days
             if days <= 0:
-                days = 1  # Minimum 1 day
+                days = 1
 
-            # Calculate base price
             total_price = Decimal('0')
             for room in rooms:
                 room_type = room.room_type
                 base_price = room_type.base_price
                 
-                # Calculate price for the number of days
                 room_price = base_price * days
                 
-                # Add surcharge for extra guests
                 if guest_count > room_type.max_guests:
                     extra_guests = guest_count - room_type.max_guests
                     surcharge = base_price * (room_type.extra_guest_surcharge / 100) * extra_guests * days
@@ -380,7 +323,6 @@ class BookingSerializer(ModelSerializer):
                 
                 total_price += room_price
             
-            # Apply discount if provided
             if discount_code:
                 try:
                     discount = DiscountCode.objects.get(code=discount_code)
@@ -402,27 +344,20 @@ class BookingSerializer(ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        # Remove discount_code as it's not a model field
         discount_code = self.context['request'].data.get('discount_code')
         validated_data.pop('discount_code', None)
-        # Get discount_applied but don't remove it yet
         discount_applied = validated_data.pop('discount_applied', None)
-        # Remove rooms from validated_data to avoid direct assignment
         rooms_data = validated_data.pop('rooms', None)
     
-        # Create booking with transaction to avoid race conditions
         with transaction.atomic():
             booking = Booking.objects.create(**validated_data)
         
-            # Set rooms for the booking
             if rooms_data is not None:
                 booking.rooms.set(rooms_data)
         
-            # Increase used_count when discount code is used
             if discount_applied:
                 discount_applied.used_count = F('used_count') + 1
                 discount_applied.save(update_fields=["used_count"])
-                # Update the booking with the discount_applied
                 booking.discount_applied = discount_applied
                 booking.save()
         
@@ -434,35 +369,27 @@ class BookingSerializer(ModelSerializer):
         discount_code = request.data.get('discount_code') if request else None
         discount_applied = validated_data.get('discount_applied')
         
-        # Check if any of the fields that affect total_price have changed
         fields_affecting_price = ['rooms', 'check_in_date', 'check_out_date', 'guest_count', 'discount_code']
         price_affected = any(field in validated_data for field in fields_affecting_price)
         
-        # If updating price-affecting fields, recalculate total_price
         if price_affected:
-            # Get current values for calculation
             check_in_date = validated_data.get('check_in_date', instance.check_in_date)
             check_out_date = validated_data.get('check_out_date', instance.check_out_date)
             rooms = rooms_data if rooms_data is not None else instance.rooms.all()
             guest_count = validated_data.get('guest_count', instance.guest_count)
             
-            # Recalculate total price
             if check_in_date and check_out_date and rooms and guest_count:
-                # Calculate number of days
                 days = (check_out_date - check_in_date).days
                 if days <= 0:
-                    days = 1  # Minimum 1 day
+                    days = 1
 
-                # Calculate base price
                 total_price = Decimal('0')
                 for room in rooms:
                     room_type = room.room_type
                     base_price = room_type.base_price
                     
-                    # Calculate price for the number of days
                     room_price = base_price * days
                     
-                    # Add surcharge for extra guests
                     if guest_count > room_type.max_guests:
                         extra_guests = guest_count - room_type.max_guests
                         surcharge = base_price * (room_type.extra_guest_surcharge / 100) * extra_guests * days
@@ -470,7 +397,6 @@ class BookingSerializer(ModelSerializer):
                     
                     total_price += room_price
                 
-                # Apply discount if provided
                 if discount_code:
                     try:
                         discount = DiscountCode.objects.get(code=discount_code)
@@ -490,20 +416,16 @@ class BookingSerializer(ModelSerializer):
                 validated_data['total_price'] = total_price
         
         with transaction.atomic():
-            # Update discount used_count if it changed
             old_discount = instance.discount_applied
             if old_discount != discount_applied:
-                # Decrease used_count of old discount if it exists
                 if old_discount:
                     old_discount.used_count = F('used_count') - 1
                     old_discount.save(update_fields=["used_count"])
                 
-                # Increase used_count of new discount if it exists
                 if discount_applied:
                     discount_applied.used_count = F('used_count') + 1
                     discount_applied.save(update_fields=["used_count"])
             
-            # Update instance with validated data
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)
             if rooms_data is not None:
@@ -560,7 +482,6 @@ class RoomRentalSerializer(ModelSerializer):
             if rooms_data is not None:
                 instance.rooms.set(rooms_data)
             instance.save()
-            # Nếu cập nhật actual_check_out_date, gọi check_out
             if validated_data.get('actual_check_out_date'):
                 instance.check_out()
         return instance
@@ -648,7 +569,6 @@ class BookingDetailSerializer(ModelSerializer):
                 raise serializers.ValidationError("Ngày nhận phòng phải trước ngày trả phòng.")
             if check_in_date > timezone.now() + timedelta(days=28):
                 raise serializers.ValidationError("Ngày nhận phòng không được vượt quá 28 ngày kể từ thời điểm đặt.")
-                #28 ngày để nhận phòng có thể thay đổi nếu muốn, 28 ngày chỉ mang tính tham khảo
 
         for room in rooms:
             if room.status != 'available':
@@ -657,42 +577,6 @@ class BookingDetailSerializer(ModelSerializer):
                 raise serializers.ValidationError(f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách.")
 
         return attrs
-
-
-    # def create(self, validated_data):
-    #     password = validated_data.pop('password')
-    #     avatar = validated_data.pop('avatar', None)
-    #     user = User(
-    #         username=validated_data['username'],
-    #         email=validated_data['email'],
-    #         full_name=validated_data.get('full_name'),
-    #         phone=validated_data.get('phone'),
-    #         id_card=validated_data.get('id_card'),
-    #         address=validated_data.get('address'),
-    #         role=validated_data.get('role', 'customer'),
-    #     )
-    #     user.set_password(password) 
-    #     if avatar:
-    #         user.avatar = avatar
-    #     user.save()
-    #     return user
-
-    # def update(self, validated_data):
-    #     password = validated_data.pop('password', None)
-    #     avatar = validated_data.pop('avatar', None)
-
-    #     for attr, value in validated_data.items():
-    #         setattr(instance, attr, value)
-
-    #     if password:
-    #         instance.set_password(password)  
-
-    #     if avatar is not None:
-    #         instance.avatar = avatar
-
-    #     instance.save()
-    #     instance.update_customer_type()
-    #     return instance
 
     class Meta:
         model = Booking
@@ -747,7 +631,6 @@ class RoomRentalDetailSerializer(ModelSerializer):
             instance.save()
         return instance
 
-
     class Meta:
         model = RoomRental
         fields = [
@@ -766,35 +649,28 @@ class RoomDetailSerializer(ModelSerializer):
     primary_image = serializers.SerializerMethodField()
 
     def get_current_bookings(self, obj):
-        # Lấy các booking hiện tại (chưa check-out)
         current_bookings = obj.bookings.filter(
             status__in=['pending', 'confirmed', 'checked_in']
         ).select_related('customer').prefetch_related('rooms')
         return BookingSerializer(current_bookings, many=True, context=self.context).data
 
     def get_current_rentals(self, obj):
-        # Lấy các rental hiện tại (chưa check-out)
         current_rentals = obj.rentals.filter(
             check_out_date__gt=timezone.now()
         ).select_related('customer').prefetch_related('rooms')
         return RoomRentalSerializer(current_rentals, many=True, context=self.context).data
 
     def get_images(self, obj):
-        # Lấy tất cả ảnh của phòng, sắp xếp theo ảnh chính trước
         images = obj.images.all().order_by('-is_primary', '-created_at')
         return RoomImageSerializer(images, many=True, context=self.context).data
 
     def get_primary_image(self, obj):
-        # Lấy ảnh chính của phòng
         primary_image_obj = obj.images.filter(is_primary=True).first()
         if primary_image_obj:
             return RoomImageSerializer(primary_image_obj, context=self.context).data
-        
-        # Nếu không có ảnh chính, lấy ảnh đầu tiên
         first_image_obj = obj.images.first()
         if first_image_obj:
             return RoomImageSerializer(first_image_obj, context=self.context).data
-            
         return None
 
     class Meta:
