@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Container,
@@ -17,7 +17,6 @@ import {
   DialogContent,
   DialogActions,
   IconButton,
-  Divider,
   Card,
   Grid,
 } from '@mui/material';
@@ -28,1048 +27,609 @@ import { Close as CloseIcon } from '@mui/icons-material';
 import api from '../services/apis';
 import authUtils from '../services/auth';
 import vi from 'date-fns/locale/vi';
-import { format } from 'date-fns';
+import { format, isValid, differenceInDays } from 'date-fns';
+
+const ErrorBoundary = ({ children }) => {
+  const [hasError, setHasError] = useState(false);
+  if (hasError) {
+    return (
+      <Alert severity="error" sx={{ m: 2, fontFamily: 'Inter' }}>
+        Đã xảy ra lỗi. Vui lòng thử lại sau.
+      </Alert>
+    );
+  }
+  return children;
+};
 
 const BookingForm = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { roomId, checkInDate, checkOutDate, guestCount } = location.state || {};
+  const { roomId } = location.state || {};
 
   const [formData, setFormData] = useState({
-    customer: '',
     rooms: roomId ? [roomId] : [],
-    checkInDate: checkInDate || null,
-    checkOutDate: checkOutDate || null,
-    guestCount: guestCount || 1,
-    specialRequests: '',
+    checkInDate: null,
+    checkOutDate: null,
+    guestCount: 1,
     discountCode: '',
+    specialRequests: '',
+    customer: '',
   });
-  const [customers, setCustomers] = useState([]);
-  const [availableRooms, setAvailableRooms] = useState([]);
-  const [maxGuests, setMaxGuests] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState('');
-  const [discountValidation, setDiscountValidation] = useState(null);
-  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
-  const [bookingPreview, setBookingPreview] = useState(null);
+  const [roomDetails, setRoomDetails] = useState(null);
+  const [customers, setCustomers] = useState([]);
+  const [pricing, setPricing] = useState(null);
+  const [pricingLoading, setPricingLoading] = useState(false);
+  const [pricingError, setPricingError] = useState(null);
+  const [discountError, setDiscountError] = useState(null);
+  const [isRoomAvailable, setIsRoomAvailable] = useState(null);
+  const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
-  useEffect(() => {
-    const checkPermission = async () => {
+  React.useEffect(() => {
+    const checkAuth = async () => {
       if (!authUtils.isAuthenticated()) {
-        navigate('/login');
+        navigate('/login', { state: { from: '/book', roomId } });
         return;
       }
       try {
-        const userData = await authUtils.getCurrentUser();
-        setUser(userData);
-        setUserRole(userData?.role || '');
-        if (userData?.role === 'customer') {
-          setFormData(prev => ({ ...prev, customer: userData.id }));
+        const userInfo = await authUtils.getCurrentUser();
+        setUser(userInfo);
+        setUserRole(userInfo.role);
+        if (userInfo.role === 'customer') {
+          setFormData((prev) => ({ ...prev, customer: userInfo.id }));
         }
-        if (!['customer', 'staff', 'admin', 'owner'].includes(userData?.role)) {
-          setError('Bạn không có quyền tạo đặt phòng.');
+        if (!['customer', 'staff', 'admin', 'owner'].includes(userInfo.role)) {
+          setErrors({ global: 'Bạn không có quyền tạo đặt phòng.' });
           navigate('/');
         }
-      } catch (err) {
-        setError('Không thể xác thực người dùng.');
-        navigate('/login');
+      } catch {
+        setErrors({ global: 'Không thể xác thực người dùng.' });
+        navigate('/login', { state: { from: '/book', roomId } });
       }
     };
-    checkPermission();
-  }, [navigate]);
+    checkAuth();
+  }, [navigate, roomId]);
 
-  useEffect(() => {
-    const fetchCustomers = async () => {
-      if (['staff', 'admin', 'owner'].includes(userRole)) {
+  React.useEffect(() => {
+    if (roomId) {
+      const fetchRoomDetails = async () => {
         try {
-          const response = await api.get('/users/?role=customer');
-          setCustomers(response.data?.results || []);
-        } catch (err) {
-          setError('Không thể tải danh sách khách hàng.');
+          const response = await api.get(`/rooms/${roomId}/`);
+          setRoomDetails(response.data);
+        } catch {
+          setErrors({ global: 'Không thể tải thông tin phòng.' });
         }
-      }
-    };
-    fetchCustomers();
+      };
+      fetchRoomDetails();
+    }
+  }, [roomId]);
+
+  React.useEffect(() => {
+    if (['staff', 'admin', 'owner'].includes(userRole)) {
+      const fetchCustomers = async () => {
+        try {
+          const response = await api.get('/users/customers_list/');
+          setCustomers(Array.isArray(response.data.results) ? response.data.results : response.data);
+        } catch {
+          setErrors({ global: 'Không thể tải danh sách khách hàng.' });
+        }
+      };
+      fetchCustomers();
+    }
   }, [userRole]);
 
-  useEffect(() => {
-    const fetchAvailableRooms = async () => {
-      if (formData.checkInDate && formData.checkOutDate && formData.checkInDate instanceof Date && formData.checkOutDate instanceof Date && !isNaN(formData.checkInDate) && !isNaN(formData.checkOutDate)) {
-        try {
-          const response = await api.get('/rooms/available/', {
-            params: {
-              check_in_date: format(formData.checkInDate, 'yyyy-MM-dd'),
-              check_out_date: format(formData.checkOutDate, 'yyyy-MM-dd'),
-            },
-          });
-          setAvailableRooms(response.data || []);
-          if (roomId && !response.data.some((room) => room.id === roomId)) {
-            setFormData((prev) => ({ ...prev, rooms: [] }));
-          }
-        } catch (err) {
-          setError('Không thể tải danh sách phòng trống.');
-        }
-      }
-    };
-    fetchAvailableRooms();
-  }, [formData.checkInDate, formData.checkOutDate, roomId]);
-
-  useEffect(() => {
-    if (formData.rooms.length && availableRooms.length) {
-      const selectedRoom = availableRooms.find(room => room.id === formData.rooms[0]);
-      if (selectedRoom) {
-        const maxGuestsValue = selectedRoom.room_type?.max_guests || 1;
-        setMaxGuests(maxGuestsValue);
-        if (formData.guestCount > maxGuestsValue) {
-          setFormData(prev => ({ ...prev, guestCount: maxGuestsValue }));
-        }
-      } else {
-        setMaxGuests(null);
-      }
-    } else {
-      setMaxGuests(null);
+  const validate = useCallback(() => {
+    const errs = {};
+    if (!formData.rooms.length) errs.rooms = 'Vui lòng chọn một phòng.';
+    if (!isValid(formData.checkInDate)) errs.checkInDate = 'Ngày nhận phòng không hợp lệ.';
+    if (!isValid(formData.checkOutDate)) errs.checkOutDate = 'Ngày trả phòng không hợp lệ.';
+    if (formData.checkInDate && formData.checkOutDate && formData.checkInDate >= formData.checkOutDate) {
+      errs.checkOutDate = 'Ngày trả phòng phải sau ngày nhận phòng.';
     }
-  }, [formData.rooms, availableRooms]);
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    if (name === 'guestCount') {
-      const newValue = parseInt(value) || 1;
-      if (maxGuests && newValue > maxGuests) {
-        setError(`Số khách không được vượt quá ${maxGuests} người cho phòng này.`);
-        return;
-      }
-      setError(null);
-      setFormData((prev) => ({ ...prev, [name]: newValue }));
-    } else {
-      setFormData((prev) => ({ ...prev, [name]: value }));
+    if (formData.checkInDate && formData.checkInDate > new Date(new Date().setDate(new Date().getDate() + 28))) {
+      errs.checkInDate = 'Ngày nhận phòng không được vượt quá 28 ngày kể từ hôm nay.';
     }
-  };
-
-  const handleRoomChange = (e) => {
-    const selectedRoom = e.target.value;
-    setFormData((prev) => ({
-      ...prev,
-      rooms: selectedRoom && selectedRoom !== '' ? [selectedRoom] : [],
-    }));
-    setError(null);
-  };
-
-  const handleDiscountCodeChange = (e) => {
-    const { value } = e.target;
-    setFormData((prev) => ({ ...prev, discountCode: value }));
-    setDiscountValidation(null);
-  };
-
-  const validateDiscountCode = async () => {
-    if (!formData.discountCode) {
-      setDiscountValidation(null);
-      return;
+    if (formData.guestCount < 1) errs.guestCount = 'Số khách phải lớn hơn 0.';
+    if (roomDetails?.room_type?.max_guests && formData.guestCount > roomDetails.room_type.max_guests) {
+      errs.guestCount = `Số khách không được vượt quá ${roomDetails.room_type.max_guests} người.`;
     }
-    try {
-      const response = await api.post('/discount-codes/validate/', {
-        code: formData.discountCode,
-        check_in_date: formData.checkInDate && formData.checkInDate instanceof Date
-          ? format(formData.checkInDate, 'yyyy-MM-dd')
-          : null,
-        check_out_date: formData.checkOutDate && formData.checkOutDate instanceof Date
-          ? format(formData.checkOutDate, 'yyyy-MM-dd')
-          : null,
-      });
-      setDiscountValidation(response.data);
-    } catch (err) {
-      let errorMessage = 'Mã giảm giá không hợp lệ hoặc đã hết hạn.';
-      if (err.response?.data?.error) {
-        errorMessage = err.response.data.error;
-      } else if (err.response?.status === 404) {
-        errorMessage = 'Mã giảm giá không tồn tại.';
-      }
-      setDiscountValidation({ valid: false, message: errorMessage });
-    }
-  };
-
-  const calculateTotalPrice = () => {
-    if (
-      !formData.rooms.length ||
-      !formData.checkInDate ||
-      !formData.checkOutDate ||
-      !availableRooms.length ||
-      !(formData.checkInDate instanceof Date) ||
-      !(formData.checkOutDate instanceof Date) ||
-      isNaN(formData.checkInDate) ||
-      isNaN(formData.checkOutDate)
-    ) {
-      return 0;
-    }
-    const selectedRoom = availableRooms.find(room => room.id === formData.rooms[0]);
-    if (!selectedRoom) return 0;
-    const nights = Math.ceil((formData.checkOutDate - formData.checkInDate) / (1000 * 60 * 60 * 24));
-    if (nights <= 0) return 0;
-    return selectedRoom.price_per_night * nights;
-  };
-
-  const calculateDiscountedPrice = () => {
-    const totalPrice = calculateTotalPrice();
-    if (discountValidation?.valid) {
-      const discountPercentage = discountValidation.discount.discount_percentage;
-      return totalPrice * (1 - discountPercentage / 100);
-    }
-    return totalPrice;
-  };
-
-  const handlePreview = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
     if (['staff', 'admin', 'owner'].includes(userRole) && !formData.customer) {
-      setError('Vui lòng chọn khách hàng.');
-      setLoading(false);
-      return;
+      errs.customer = 'Vui lòng chọn khách hàng.';
     }
-    if (!formData.rooms.length) {
-      setError('Vui lòng chọn một phòng.');
-      setLoading(false);
-      return;
+    if (isRoomAvailable === false) {
+      errs.rooms = `Phòng ${roomDetails?.room_number} không còn trống trong khoảng thời gian đã chọn.`;
     }
-    if (
-      !formData.checkInDate ||
-      !formData.checkOutDate ||
-      !(formData.checkInDate instanceof Date) ||
-      !(formData.checkOutDate instanceof Date) ||
-      isNaN(formData.checkInDate) ||
-      isNaN(formData.checkOutDate)
-    ) {
-      setError('Vui lòng chọn ngày nhận và trả phòng.');
-      setLoading(false);
-      return;
-    }
-    if (formData.checkInDate >= formData.checkOutDate) {
-      setError('Ngày trả phòng phải sau ngày nhận phòng.');
-      setLoading(false);
-      return;
-    }
-    if (maxGuests && formData.guestCount > maxGuests) {
-      setError(`Số khách không được vượt quá ${maxGuests} người cho phòng này.`);
-      setLoading(false);
-      return;
-    }
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  }, [formData, roomDetails, userRole, isRoomAvailable]);
+
+  const handleCalculatePrice = async () => {
+    if (!validate()) return;
     try {
-      const selectedRoom = availableRooms.find(room => room.id === formData.rooms[0]);
-      if (!selectedRoom) {
-        setError('Phòng đã chọn không hợp lệ.');
-        setLoading(false);
+      setPricingLoading(true);
+      setPricingError(null);
+      setDiscountError(null);
+      setPricing(null);
+      setIsRoomAvailable(null);
+
+      const params = new URLSearchParams({
+        check_in: format(formData.checkInDate, 'yyyy-MM-dd'),
+        check_out: format(formData.checkOutDate, 'yyyy-MM-dd'),
+        room_id: formData.rooms[0],
+      });
+      const availabilityResponse = await api.get(`/rooms/available/?${params.toString()}`);
+      const availableRooms = Array.isArray(availabilityResponse.data.results)
+        ? availabilityResponse.data.results
+        : availabilityResponse.data;
+      const isAvailable = availableRooms.some((r) => r.id === formData.rooms[0]);
+      setIsRoomAvailable(isAvailable);
+
+      if (!isAvailable) {
+        setPricingError(`Phòng ${roomDetails?.room_number} không còn trống trong khoảng thời gian đã chọn.`);
+        setPricing(null);
         return;
       }
-      const nights = Math.ceil((formData.checkOutDate - formData.checkInDate) / (1000 * 60 * 60 * 24));
-      const totalPrice = calculateTotalPrice();
-      const discountedPrice = calculateDiscountedPrice();
-      const previewData = {
-        room: selectedRoom,
-        nights,
-        totalPrice,
-        discountedPrice,
-        discount: discountValidation?.valid ? discountValidation : null,
-        checkInDate: format(formData.checkInDate, 'dd/MM/yyyy'),
-        checkOutDate: format(formData.checkOutDate, 'dd/MM/yyyy'),
-        guestCount: formData.guestCount,
-      };
-      setBookingPreview(previewData);
-      setPreviewDialogOpen(true);
+
+      const priceResponse = await api.post('/bookings/calculate-price/', {
+        room_id: formData.rooms[0],
+        check_in_date: format(formData.checkInDate, 'yyyy-MM-dd'),
+        check_out_date: format(formData.checkOutDate, 'yyyy-MM-dd'),
+        guest_count: parseInt(formData.guestCount),
+        discount_code: formData.discountCode || undefined,
+      });
+      setPricing(priceResponse.data);
+      setPricingError(null);
+      setDiscountError(null);
     } catch (err) {
-      setError('Không thể tạo bản xem trước. Vui lòng thử lại.');
+      const errorMessage = err.response?.data?.error || 'Không thể tính giá. Vui lòng kiểm tra lại thông tin.';
+      if (errorMessage.includes('Mã giảm giá')) {
+        setDiscountError('Mã giảm giá không hợp lệ hoặc đã hết hạn.');
+        setPricingError(null);
+      } else {
+        setPricingError(errorMessage);
+        setDiscountError(null);
+      }
+      setPricing(null);
+      setIsRoomAvailable(false);
+    } finally {
+      setPricingLoading(false);
+    }
+  };
+
+  const handleInputChange = (name, value) => {
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    setErrors({});
+    setPricing(null);
+    setPricingError(null);
+    setDiscountError(null);
+    setIsRoomAvailable(null);
+  };
+
+  const normalizeDate = (date) => {
+    if (!isValid(date)) throw new Error('Ngày không hợp lệ');
+    return format(date, 'yyyy-MM-dd');
+  };
+
+  const handlePreviewBooking = async () => {
+    if (!validate()) return;
+    try {
+      setLoading(true);
+      setPreviewOpen(true);
+      setErrors({});
+    } catch (err) {
+      setErrors({ global: err.response?.data?.error || 'Không thể chuẩn bị thông tin đặt phòng.' });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSubmit = async () => {
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
-    setPreviewDialogOpen(false);
+  const confirmBooking = async () => {
+    if (!validate()) return;
     try {
-      if (maxGuests && formData.guestCount > maxGuests) {
-        setError(`Số khách không được vượt quá ${maxGuests} người cho phòng này.`);
-        setLoading(false);
-        setPreviewDialogOpen(true);
-        return;
-      }
+      setLoading(true);
       const payload = {
-        customer: userRole === 'customer' ? user?.id : formData.customer,
         rooms: formData.rooms,
-        check_in_date: formData.checkInDate && formData.checkInDate instanceof Date
-          ? format(formData.checkInDate, "yyyy-MM-dd'T14:00:00Z'")
-          : null,
-        check_out_date: formData.checkOutDate && formData.checkOutDate instanceof Date
-          ? format(formData.checkOutDate, "yyyy-MM-dd'T12:00:00Z'")
-          : null,
-        guest_count: parseInt(formData.guestCount) || 1,
-        special_requests: formData.specialRequests,
+        check_in_date: normalizeDate(formData.checkInDate),
+        check_out_date: normalizeDate(formData.checkOutDate),
+        guest_count: parseInt(formData.guestCount),
+        discount_code: formData.discountCode || undefined,
+        special_requests: formData.specialRequests || undefined,
       };
-      if (discountValidation?.valid) {
-        payload.discount_code = formData.discountCode;
+      if (['staff', 'admin', 'owner'].includes(userRole)) {
+        payload.customer = formData.customer;
       }
       const response = await api.post('/bookings/', payload);
-      await api.post('/notifications/', {
-        type: 'booking_confirmation',
-        booking_id: response.data.id,
-        message: `Đặt phòng ${response.data.id} đã được xác nhận cho phòng ${formData.rooms.join(', ')} từ ${format(formData.checkInDate, 'dd/MM/yyyy')} đến ${format(formData.checkOutDate, 'dd/MM/yyyy')}.`,
-      });
-      setSuccess(`Đặt phòng thành công! Mã đặt phòng: ${response.data.id}. Thông báo xác nhận đã được gửi.`);
-      setTimeout(() => navigate(userRole === 'customer' ? '/my-bookings' : '/staff/bookings'), 3000);
+      setSuccess(`Đặt phòng thành công! Mã đặt phòng: ${response.data.id}`);
+      setErrors({});
+      setPreviewOpen(false);
+      setTimeout(() => navigate('/my-bookings'), 2000);
     } catch (err) {
-      let errorMessage = 'Không thể tạo đặt phòng. Vui lòng thử lại.';
-      if (err.response?.data) {
-        const errors = err.response.data;
-        if (errors.rooms) {
-          errorMessage = 'Phòng không khả dụng trong khoảng thời gian đã chọn.';
-        } else if (errors.guest_count) {
-          errorMessage = errors.guest_count;
-        } else if (errors.check_in_date) {
-          errorMessage = errors.check_in_date;
-        } else if (errors.check_out_date) {
-          errorMessage = errors.check_out_date;
-        } else if (errors.discount_code) {
-          errorMessage = errors.discount_code;
-        } else if (errors.detail) {
-          errorMessage = errors.detail;
-        } else {
-          errorMessage = Object.values(errors).flat().join(' ');
-        }
-      }
-      setError(errorMessage);
-      setPreviewDialogOpen(true);
+      setErrors({ global: err.response?.data?.error || 'Không thể tạo đặt phòng. Vui lòng thử lại.' });
+      setPreviewOpen(false);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleClosePreviewDialog = () => {
-    setPreviewDialogOpen(false);
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
   };
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
-  };
+  const numberOfDays = useMemo(() => {
+    if (formData.checkInDate && formData.checkOutDate && isValid(formData.checkInDate) && isValid(formData.checkOutDate)) {
+      return Math.max(1, differenceInDays(formData.checkOutDate, formData.checkInDate));
+    }
+    return 0;
+  }, [formData.checkInDate, formData.checkOutDate]);
 
   return (
-    <Box sx={{ 
-      bgcolor: 'background.default', 
-      minHeight: '100vh', 
-      py: { xs: 3, sm: 6 }, 
-      px: { xs: 2, sm: 0 }
-    }}>
-      <Container maxWidth="md">
-        <Typography 
-          variant="h3" 
-          sx={{ 
-            fontFamily: 'Inter', 
-            color: '#8B4513', 
-            fontWeight: 700, 
-            mb: 4, 
-            textAlign: 'center',
-            fontSize: { xs: '1.8rem', sm: '2.5rem' },
-            textShadow: '1px 1px 2px rgba(0,0,0,0.1)'
-          }}
-        >
-          Đặt Phòng Của Sự Sang Trọng
-        </Typography>
-        <Card 
-          sx={{ 
-            p: { xs: 2, sm: 4 }, 
-            borderRadius: 4, 
-            boxShadow: '0 8px 24px rgba(139, 69, 19, 0.2)', 
-            bgcolor: '#FFF8DC',
-            border: '1px solid rgba(139, 69, 19, 0.1)'
-          }}
-        >
-          <Box component="form" onSubmit={handlePreview}>
-            {error && <Alert severity="error" sx={{ mb: 3, borderRadius: 3, fontFamily: 'Inter' }}>{error}</Alert>}
-            {success && <Alert severity="success" sx={{ mb: 3, borderRadius: 3, fontFamily: 'Inter' }}>{success}</Alert>}
-            <Grid container spacing={{ xs: 2, sm: 3 }}>
+    <ErrorBoundary>
+      <Box sx={{ bgcolor: 'background.default', minHeight: '100vh', py: 6 }}>
+        <Container maxWidth="lg">
+          <Card sx={{ p: 4, borderRadius: 4, boxShadow: '0 8px 24px rgba(139, 69, 19, 0.2)', bgcolor: '#FFF8DC' }}>
+            <Typography variant="h4" sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 700, mb: 4, textAlign: 'center' }}>
+              Đặt Phòng
+            </Typography>
+            {errors.global && (
+              <Alert severity="error" sx={{ mb: 3, borderRadius: 3, fontFamily: 'Inter' }}>
+                {errors.global}
+              </Alert>
+            )}
+            {success && (
+              <Alert severity="success" sx={{ mb: 3, borderRadius: 3, fontFamily: 'Inter' }}>
+                {success}
+              </Alert>
+            )}
+            {pricingError && (
+              <Alert severity="error" sx={{ mb: 3, borderRadius: 3, fontFamily: 'Inter' }}>
+                {pricingError}
+              </Alert>
+            )}
+            <Grid container spacing={3}>
               {['staff', 'admin', 'owner'].includes(userRole) && (
                 <Grid item xs={12}>
-                  <FormControl 
-                    fullWidth 
-                    required 
-                    sx={{ 
-                      bgcolor: 'white', 
-                      borderRadius: 3,
-                      boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-                      '& .MuiOutlinedInput-root': {
-                        '& fieldset': {
-                          borderColor: '#DAA520',
-                        },
-                        '&:hover fieldset': {
-                          borderColor: '#B8860B',
-                        },
-                        '&.Mui-focused fieldset': {
-                          borderColor: '#8B4513',
-                        },
-                      },
-                    }}
-                  >
-                    <InputLabel 
-                      sx={{ 
-                        fontFamily: 'Inter',
-                        color: '#8B4513',
-                        '&.Mui-focused': {
-                          color: '#8B4513',
-                        },
-                      }}
-                    >
-                      Khách hàng
-                    </InputLabel>
+                  <FormControl fullWidth sx={{ bgcolor: 'white', borderRadius: 3 }} error={!!errors.customer}>
+                    <InputLabel sx={{ fontFamily: 'Inter' }}>Khách hàng</InputLabel>
                     <Select
-                      name="customer"
-                      value={formData.customer}
-                      onChange={handleInputChange}
+                      value={formData.customer || ''}
+                      onChange={(e) => handleInputChange('customer', e.target.value)}
                       label="Khách hàng"
-                      sx={{ fontFamily: 'Inter', color: '#333' }}
+                      sx={{ fontFamily: 'Inter' }}
+                      required
                     >
-                      <MenuItem value="" disabled sx={{ fontFamily: 'Inter' }}>
+                      <MenuItem value="" disabled>
                         Chọn khách hàng
                       </MenuItem>
                       {customers.map((customer) => (
-                        <MenuItem 
-                          key={customer.id} 
-                          value={customer.id} 
-                          sx={{ 
-                            fontFamily: 'Inter',
-                            '&:hover': {
-                              bgcolor: 'rgba(218, 165, 32, 0.1)',
-                            },
-                            '&.Mui-selected': {
-                              bgcolor: 'rgba(218, 165, 32, 0.2)',
-                            },
-                            '&.Mui-selected:hover': {
-                              bgcolor: 'rgba(218, 165, 32, 0.2)',
-                            },
-                          }}
-                        >
+                        <MenuItem key={customer.id} value={customer.id} sx={{ fontFamily: 'Inter' }}>
                           {customer.full_name} ({customer.email})
                         </MenuItem>
                       ))}
                     </Select>
+                    {errors.customer && (
+                      <Typography variant="caption" color="error" sx={{ fontFamily: 'Inter', mt: 1 }}>
+                        {errors.customer}
+                      </Typography>
+                    )}
                   </FormControl>
                 </Grid>
               )}
-              
-              {/* Discount Code Section */}
               <Grid item xs={12}>
-                <Typography 
-                  variant="h6" 
-                  sx={{ 
-                    fontFamily: 'Inter', 
-                    color: '#8B4513', 
-                    mb: 1,
-                    fontWeight: 600
-                  }}
-                >
-                  Mã Giảm Giá
-                </Typography>
+                <Box sx={{ p: 2, bgcolor: 'rgba(139, 69, 19, 0.05)', borderRadius: 2 }}>
+                  <Typography variant="h6" sx={{ fontFamily: 'Inter', color: '#8B4513', mb: 2, fontWeight: 600 }}>
+                    Thông Tin Phòng
+                  </Typography>
+                  {roomDetails ? (
+                    <Typography variant="body1" sx={{ fontFamily: 'Inter', mb: 1.5 }}>
+                      <strong>Phòng đã chọn:</strong> {roomDetails.room_number} - {roomDetails.room_type_name || 'N/A'} (
+                      {formatCurrency(roomDetails.room_type_price)}/đêm)
+                    </Typography>
+                  ) : (
+                    <Typography variant="body1" sx={{ fontFamily: 'Inter', color: 'text.secondary' }}>
+                      Đang tải thông tin phòng...
+                    </Typography>
+                  )}
+                  {errors.rooms && (
+                    <Typography variant="caption" color="error" sx={{ fontFamily: 'Inter', mt: 1 }}>
+                      {errors.rooms}
+                    </Typography>
+                  )}
+                </Box>
               </Grid>
-              
-              <Grid item xs={12} sm={8}>
-                <TextField
-                  fullWidth
-                  label="Mã giảm giá"
-                  name="discountCode"
-                  value={formData.discountCode}
-                  onChange={handleDiscountCodeChange}
-                  placeholder="Nhập mã giảm giá"
-                  sx={{ 
-                    bgcolor: 'white', 
-                    borderRadius: 3, 
-                    '& .MuiOutlinedInput-notchedOutline': { 
-                      borderColor: '#DAA520' 
-                    },
-                    '&:hover .MuiOutlinedInput-notchedOutline': {
-                      borderColor: '#B8860B',
-                    },
-                    '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                      borderColor: '#8B4513',
-                    },
-                    boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-                  }}
-                  InputProps={{ sx: { fontFamily: 'Inter' } }}
-                  InputLabelProps={{
-                    sx: {
-                      fontFamily: 'Inter',
-                      color: '#8B4513',
-                      '&.Mui-focused': {
-                        color: '#8B4513',
-                      },
-                    },
-                  }}
-                />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <Button
-                  variant="outlined"
-                  fullWidth
-                  onClick={validateDiscountCode}
-                  disabled={!formData.discountCode || loading}
-                  sx={{ 
-                    borderColor: '#DAA520', 
-                    color: '#DAA520', 
-                    fontFamily: 'Inter', 
-                    py: 1.5, 
-                    borderRadius: 3, 
-                    '&:hover': { 
-                      borderColor: '#B8860B', 
-                      color: '#B8860B',
-                      backgroundColor: 'rgba(218, 165, 32, 0.05)'
-                    },
-                    height: '100%',
-                    fontWeight: 600,
-                    transition: 'all 0.3s ease'
-                  }}
-                >
-                  Kiểm tra mã
-                </Button>
-              </Grid>
-              
-              {discountValidation && (
-                <Grid item xs={12}>
-                  <Alert
-                    severity={discountValidation.valid ? 'success' : 'error'}
-                    sx={{ 
-                      borderRadius: 3, 
-                      fontFamily: 'Inter',
-                      boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-                    }}
-                  >
-                    {discountValidation.valid
-                      ? `Mã hợp lệ: Giảm ${discountValidation.discount.discount_percentage}%`
-                      : discountValidation.message || 'Mã giảm giá không hợp lệ'}
-                  </Alert>
-                </Grid>
-              )}
-              
-              {/* Room Selection Section */}
               <Grid item xs={12}>
-                <Typography 
-                  variant="h6" 
-                  sx={{ 
-                    fontFamily: 'Inter', 
-                    color: '#8B4513', 
-                    mb: 1,
-                    fontWeight: 600
-                  }}
-                >
-                  Chọn Phòng
-                </Typography>
+                <Box sx={{ p: 2, bgcolor: 'rgba(139, 69, 19, 0.05)', borderRadius: 2 }}>
+                  <Typography variant="h6" sx={{ fontFamily: 'Inter', color: '#8B4513', mb: 2, fontWeight: 600 }}>
+                    Thông Tin Đặt Phòng
+                  </Typography>
+                  <Grid container spacing={2}>
+                    <Grid item xs={12} sm={6}>
+                      <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={vi}>
+                        <DatePicker
+                          label="Ngày nhận phòng"
+                          value={formData.checkInDate}
+                          onChange={(newValue) => handleInputChange('checkInDate', newValue)}
+                          minDate={new Date()}
+                          maxDate={new Date(new Date().setDate(new Date().getDate() + 28))}
+                          slotProps={{
+                            textField: {
+                              fullWidth: true,
+                              variant: 'outlined',
+                              required: true,
+                              error: !!errors.checkInDate,
+                              helperText: errors.checkInDate,
+                              sx: {
+                                bgcolor: 'white',
+                                '& .MuiInputBase-input': { fontFamily: 'Inter' },
+                                '& .MuiOutlinedInput-notchedOutline': { borderColor: '#DAA520' },
+                                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#B8860B' },
+                                '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#8B4513' },
+                              },
+                            },
+                          }}
+                        />
+                      </LocalizationProvider>
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={vi}>
+                        <DatePicker
+                          label="Ngày trả phòng"
+                          value={formData.checkOutDate}
+                          onChange={(newValue) => handleInputChange('checkOutDate', newValue)}
+                          minDate={formData.checkInDate || new Date()}
+                          slotProps={{
+                            textField: {
+                              fullWidth: true,
+                              variant: 'outlined',
+                              required: true,
+                              error: !!errors.checkOutDate,
+                              helperText: errors.checkOutDate,
+                              sx: {
+                                bgcolor: 'white',
+                                '& .MuiInputBase-input': { fontFamily: 'Inter' },
+                                '& .MuiOutlinedInput-notchedOutline': { borderColor: '#DAA520' },
+                                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#B8860B' },
+                                '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#8B4513' },
+                              },
+                            },
+                          }}
+                        />
+                      </LocalizationProvider>
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        type="number"
+                        label="Số khách"
+                        value={formData.guestCount}
+                        onChange={(e) => handleInputChange('guestCount', parseInt(e.target.value) || 1)}
+                        InputProps={{
+                          inputProps: { min: 1, max: roomDetails?.room_type?.max_guests || undefined },
+                          sx: { fontFamily: 'Inter' },
+                        }}
+                        sx={{
+                          bgcolor: 'white',
+                          '& .MuiOutlinedInput-notchedOutline': { borderColor: '#DAA520' },
+                          '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#B8860B' },
+                          '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#8B4513' },
+                        }}
+                        required
+                        error={!!errors.guestCount}
+                        helperText={errors.guestCount || (roomDetails?.room_type?.max_guests ? `Tối đa ${roomDetails.room_type.max_guests} khách` : '')}
+                      />
+                    </Grid>
+                    <Grid item xs={12}>
+                      <TextField
+                        fullWidth
+                        multiline
+                        rows={4}
+                        label="Yêu cầu đặc biệt"
+                        value={formData.specialRequests}
+                        onChange={(e) => handleInputChange('specialRequests', e.target.value)}
+                        sx={{
+                          bgcolor: 'white',
+                          '& .MuiOutlinedInput-notchedOutline': { borderColor: '#DAA520' },
+                          '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#B8860B' },
+                          '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#8B4513' },
+                        }}
+                      />
+                    </Grid>
+                  </Grid>
+                </Box>
               </Grid>
-              
               <Grid item xs={12}>
-                <FormControl 
-                  fullWidth 
-                  required 
-                  sx={{ 
-                    bgcolor: 'white', 
-                    borderRadius: 3,
-                    boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-                    '& .MuiOutlinedInput-root': {
-                      '& fieldset': {
-                        borderColor: '#DAA520',
-                      },
-                      '&:hover fieldset': {
-                        borderColor: '#B8860B',
-                      },
-                      '&.Mui-focused fieldset': {
-                        borderColor: '#8B4513',
-                      },
-                    },
-                  }}
-                >
-                  <InputLabel 
-                    sx={{ 
-                      fontFamily: 'Inter',
-                      color: '#8B4513',
-                      '&.Mui-focused': {
-                        color: '#8B4513',
-                      },
-                    }}
-                  >
-                    Phòng
-                  </InputLabel>
-                  <Select
-                    name="rooms"
-                    value={formData.rooms[0] || ''}
-                    onChange={handleRoomChange}
-                    label="Phòng"
-                    disabled={!formData.checkInDate || !formData.checkOutDate}
-                    sx={{ fontFamily: 'Inter', color: '#333' }}
-                  >
-                    <MenuItem value="" disabled sx={{ fontFamily: 'Inter' }}>
-                      Chọn phòng
-                    </MenuItem>
-                    {availableRooms.map((room) => (
-                      <MenuItem 
-                        key={room.id} 
-                        value={room.id} 
-                        sx={{ 
+                <Box sx={{ p: 2, bgcolor: 'rgba(139, 69, 19, 0.05)', borderRadius: 2 }}>
+                  <Typography variant="h6" sx={{ fontFamily: 'Inter', color: '#8B4513', mb: 2, fontWeight: 600 }}>
+                    Mã Giảm Giá
+                  </Typography>
+                  <Grid container spacing={2} alignItems="center">
+                    <Grid item xs={12} sm={8}>
+                      <TextField
+                        fullWidth
+                        variant="outlined"
+                        placeholder="Nhập mã giảm giá"
+                        value={formData.discountCode}
+                        onChange={(e) => handleInputChange('discountCode', e.target.value)}
+                        error={!!discountError}
+                        helperText={discountError}
+                        sx={{
+                          bgcolor: 'white',
+                          '& .MuiOutlinedInput-notchedOutline': { borderColor: '#DAA520' },
+                          '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#B8860B' },
+                          '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#8B4513' },
+                        }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <Button
+                        variant="contained"
+                        onClick={handleCalculatePrice}
+                        disabled={pricingLoading || Object.keys(errors).length > 0}
+                        sx={{
+                          bgcolor: '#DAA520',
+                          '&:hover': { bgcolor: '#B8860B' },
                           fontFamily: 'Inter',
-                          '&:hover': {
-                            bgcolor: 'rgba(218, 165, 32, 0.1)',
-                          },
-                          '&.Mui-selected': {
-                            bgcolor: 'rgba(218, 165, 32, 0.2)',
-                          },
-                          '&.Mui-selected:hover': {
-                            bgcolor: 'rgba(218, 165, 32, 0.2)',
-                          },
+                          width: '100%',
+                          boxShadow: '0 4px 12px rgba(218, 165, 32, 0.3)',
                         }}
                       >
-                        {room.room_number} - {room.room_type?.name || room.room_type} ({formatCurrency(room.price_per_night)}/đêm, Tối đa {room.room_type?.max_guests || 'N/A'} khách)
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                        Tính Giá Tạm Tính
+                      </Button>
+                    </Grid>
+                  </Grid>
+                </Box>
               </Grid>
-              
-              {/* Date Selection Section */}
-              <Grid item xs={12}>
-                <Typography 
-                  variant="h6" 
-                  sx={{ 
-                    fontFamily: 'Inter', 
-                    color: '#8B4513', 
-                    mb: 1,
-                    fontWeight: 600
-                  }}
-                >
-                  Ngày Ở
-                </Typography>
-              </Grid>
-              
-              <Grid item xs={12} sm={6}>
-                <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={vi}>
-                  <DatePicker
-                    label="Ngày nhận phòng"
-                    value={formData.checkInDate}
-                    onChange={(newValue) => setFormData((prev) => ({ ...prev, checkInDate: newValue }))}
-                    minDate={new Date()}
-                    maxDate={new Date(new Date().setDate(new Date().getDate() + 28))}
-                    slots={{ textField: TextField }}
-                    slotProps={{
-                      textField: {
-                        fullWidth: true,
-                        required: true,
-                        variant: 'outlined',
-                        sx: { 
-                          bgcolor: 'white', 
-                          '& .MuiInputBase-input': { fontFamily: 'Inter' }, 
-                          '& .MuiOutlinedInput-notchedOutline': { borderColor: '#DAA520' },
-                          '&:hover .MuiOutlinedInput-notchedOutline': {
-                            borderColor: '#B8860B',
-                          },
-                          '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                            borderColor: '#8B4513',
-                          },
-                          borderRadius: 3,
-                          boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-                        },
-                        InputLabelProps: {
-                          sx: {
-                            fontFamily: 'Inter',
-                            color: '#8B4513',
-                            '&.Mui-focused': {
-                              color: '#8B4513',
-                            },
-                          },
-                        },
-                      },
-                    }}
-                  />
-                </LocalizationProvider>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={vi}>
-                  <DatePicker
-                    label="Ngày trả phòng"
-                    value={formData.checkOutDate}
-                    onChange={(newValue) => setFormData((prev) => ({ ...prev, checkOutDate: newValue }))}
-                    minDate={formData.checkInDate || new Date()}
-                    slots={{ textField: TextField }}
-                    slotProps={{
-                      textField: {
-                        fullWidth: true,
-                        required: true,
-                        variant: 'outlined',
-                        sx: { 
-                          bgcolor: 'white', 
-                          '& .MuiInputBase-input': { fontFamily: 'Inter' }, 
-                          '& .MuiOutlinedInput-notchedOutline': { borderColor: '#DAA520' },
-                          '&:hover .MuiOutlinedInput-notchedOutline': {
-                            borderColor: '#B8860B',
-                          },
-                          '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                            borderColor: '#8B4513',
-                          },
-                          borderRadius: 3,
-                          boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-                        },
-                        InputLabelProps: {
-                          sx: {
-                            fontFamily: 'Inter',
-                            color: '#8B4513',
-                            '&.Mui-focused': {
-                              color: '#8B4513',
-                            },
-                          },
-                        },
-                      },
-                    }}
-                  />
-                </LocalizationProvider>
-              </Grid>
-              
-              {/* Guest Count and Special Requests Section */}
-              <Grid item xs={12}>
-                <Typography 
-                  variant="h6" 
-                  sx={{ 
-                    fontFamily: 'Inter', 
-                    color: '#8B4513', 
-                    mb: 1,
-                    fontWeight: 600
-                  }}
-                >
-                  Thông Tin Khách
-                </Typography>
-              </Grid>
-              
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  type="number"
-                  label="Số khách"
-                  name="guestCount"
-                  value={formData.guestCount}
-                  onChange={handleInputChange}
-                  InputProps={{ 
-                    inputProps: { min: 1, max: maxGuests || undefined }, 
-                    sx: { fontFamily: 'Inter' } 
-                  }}
-                  required
-                  sx={{ 
-                    bgcolor: 'white', 
-                    borderRadius: 3, 
-                    '& .MuiOutlinedInput-notchedOutline': { borderColor: '#DAA520' },
-                    '&:hover .MuiOutlinedInput-notchedOutline': {
-                      borderColor: '#B8860B',
-                    },
-                    '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                      borderColor: '#8B4513',
-                    },
-                    boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-                  }}
-                  InputLabelProps={{
-                    sx: {
-                      fontFamily: 'Inter',
-                      color: '#8B4513',
-                      '&.Mui-focused': {
-                        color: '#8B4513',
-                      },
-                    },
-                  }}
-                  helperText={maxGuests ? `Tối đa ${maxGuests} khách` : ''}
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Yêu cầu đặc biệt"
-                  name="specialRequests"
-                  value={formData.specialRequests}
-                  onChange={handleInputChange}
-                  multiline
-                  rows={3}
-                  InputProps={{ sx: { fontFamily: 'Inter' } }}
-                  sx={{ 
-                    bgcolor: 'white', 
-                    borderRadius: 3, 
-                    '& .MuiOutlinedInput-notchedOutline': { borderColor: '#DAA520' },
-                    '&:hover .MuiOutlinedInput-notchedOutline': {
-                      borderColor: '#B8860B',
-                    },
-                    '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                      borderColor: '#8B4513',
-                    },
-                    boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-                  }}
-                  InputLabelProps={{
-                    sx: {
-                      fontFamily: 'Inter',
-                      color: '#8B4513',
-                      '&.Mui-focused': {
-                        color: '#8B4513',
-                      },
-                    },
-                  }}
-                />
-              </Grid>
-              
-              {/* Action Buttons */}
-              <Grid item xs={12} sx={{ display: 'flex', gap: 2, justifyContent: 'center', mt: 2 }}>
-                <Button
-                  type="submit"
-                  variant="contained"
-                  disabled={loading}
-                  sx={{ 
-                    bgcolor: '#DAA520', 
-                    '&:hover': { 
-                      bgcolor: '#B8860B',
-                      boxShadow: '0 4px 12px rgba(184, 134, 11, 0.3)'
-                    }, 
-                    fontFamily: 'Inter', 
-                    px: { xs: 2, sm: 4 }, 
-                    py: 1.5, 
-                    borderRadius: 3,
-                    fontWeight: 600,
-                    textTransform: 'none',
-                    transition: 'all 0.3s ease',
-                    boxShadow: '0 2px 8px rgba(218, 165, 32, 0.3)'
-                  }}
-                >
-                  {loading ? <CircularProgress size={24} color="inherit" /> : 'Xem Trước Đặt Phòng'}
-                </Button>
+              {pricing && !pricingLoading && !pricingError && !discountError && (
+                <Grid item xs={12}>
+                  <Box sx={{ p: 2, bgcolor: 'white', borderRadius: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+                    <Typography variant="h6" sx={{ fontFamily: 'Inter', color: '#8B4513', mb: 2, fontWeight: 600, textAlign: 'center' }}>
+                      Giá Tạm Tính
+                    </Typography>
+                    <Typography variant="body1" sx={{ fontFamily: 'Inter', color: 'text.secondary', mb: 1 }}>
+                      Số đêm: {numberOfDays}
+                    </Typography>
+                    <Typography variant="body1" sx={{ fontFamily: 'Inter', color: 'text.secondary', mb: 1 }}>
+                      Giá gốc: {formatCurrency(pricing.original_price)}
+                    </Typography>
+                    {pricing.discount_info && (
+                      <Typography variant="body1" sx={{ fontFamily: 'Inter', color: '#2E8B57', mb: 1 }}>
+                        Giảm giá: {pricing.discount_info.discount_percentage}% (
+                        {formatCurrency(pricing.discount_info.amount_saved)})
+                      </Typography>
+                    )}
+                    <Typography variant="body1" sx={{ fontFamily: 'Inter', color: '#DAA520', fontWeight: 600, mb: 1, fontSize: '1.1rem' }}>
+                      Tổng giá: {formatCurrency(pricing.total_price)}
+                    </Typography>
+                  </Box>
+                </Grid>
+              )}
+              {pricingLoading && (
+                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+                  <CircularProgress sx={{ color: '#DAA520' }} />
+                </Box>
+              )}
+              <Grid item xs={12} sx={{ display: 'flex', justifyContent: 'center', gap: 2, mt: 3 }}>
                 <Button
                   variant="outlined"
-                  onClick={() => navigate(userRole === 'customer' ? '/my-bookings' : '/staff/bookings')}
-                  sx={{ 
-                    borderColor: '#DAA520', 
-                    color: '#DAA520', 
-                    fontFamily: 'Inter', 
-                    px: { xs: 2, sm: 4 }, 
-                    py: 1.5, 
-                    borderRadius: 3, 
-                    '&:hover': { 
-                      borderColor: '#B8860B', 
-                      color: '#B8860B',
-                      backgroundColor: 'rgba(218, 165, 32, 0.05)'
-                    },
-                    fontWeight: 600,
-                    textTransform: 'none',
-                    transition: 'all 0.3s ease'
+                  onClick={() => navigate('/rooms')}
+                  sx={{
+                    borderColor: '#DAA520',
+                    color: '#DAA520',
+                    fontFamily: 'Inter',
+                    px: 4,
+                    py: 1.5,
+                    borderRadius: 3,
+                    '&:hover': { borderColor: '#B8860B', color: '#B8860B' },
                   }}
                 >
-                  Hủy
+                  Quay Lại
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={handlePreviewBooking}
+                  disabled={loading || Object.keys(errors).length > 0 || !pricing || isRoomAvailable === false}
+                  sx={{
+                    bgcolor: '#DAA520',
+                    '&:hover': { bgcolor: '#B8860B' },
+                    fontFamily: 'Inter',
+                    px: 4,
+                    py: 1.5,
+                    borderRadius: 3,
+                    boxShadow: '0 4px 12px rgba(218, 165, 32, 0.3)',
+                  }}
+                >
+                  Đặt Phòng
                 </Button>
               </Grid>
             </Grid>
-          </Box>
-        </Card>
-        
-        {/* Preview Dialog */}
-        <Dialog
-          open={previewDialogOpen}
-          onClose={handleClosePreviewDialog}
-          maxWidth="sm"
-          fullWidth
-          sx={{ 
-            '& .MuiDialog-paper': { 
-              borderRadius: 4, 
-              bgcolor: '#FFF8DC',
-              boxShadow: '0 12px 30px rgba(139, 69, 19, 0.3)'
-            } 
-          }}
-        >
-          <DialogTitle 
-            sx={{ 
-              fontFamily: 'Inter', 
-              color: '#8B4513', 
-              fontWeight: 600,
-              fontSize: '1.5rem',
-              pb: 1
-            }}
+          </Card>
+          <Dialog
+            open={previewOpen}
+            onClose={() => setPreviewOpen(false)}
+            maxWidth="sm"
+            fullWidth
+            sx={{ '& .MuiDialog-paper': { borderRadius: 4, bgcolor: '#FFF8DC', maxWidth: { xs: '90vw', sm: '600px' } } }}
           >
-            Xác Nhận Đặt Phòng
-            <IconButton
-              onClick={handleClosePreviewDialog}
-              sx={{ 
-                position: 'absolute', 
-                right: 8, 
-                top: 8, 
-                color: '#8B4513',
-                '&:hover': {
-                  bgcolor: 'rgba(139, 69, 19, 0.1)'
-                }
-              }}
-            >
-              <CloseIcon />
-            </IconButton>
-          </DialogTitle>
-          <DialogContent dividers sx={{ bgcolor: '#FFF8DC' }}>
-            {bookingPreview ? (
-              <Box sx={{ py: 2 }}>
-                <Typography 
-                  variant="h5" 
-                  sx={{ 
-                    fontFamily: 'Inter', 
-                    color: '#8B4513', 
-                    mb: 3,
-                    fontWeight: 600,
-                    textAlign: 'center'
-                  }}
-                >
-                  {bookingPreview.room?.room_number} - {bookingPreview.room?.room_type?.name || bookingPreview.room?.room_type}
+            <DialogTitle sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 600 }}>
+              Xác Nhận Đặt Phòng
+              <IconButton
+                onClick={() => setPreviewOpen(false)}
+                sx={{ position: 'absolute', right: 8, top: 8, color: '#8B4513' }}
+              >
+                <CloseIcon />
+              </IconButton>
+            </DialogTitle>
+            <DialogContent>
+              <Box sx={{ fontFamily: 'Inter' }}>
+                <Typography variant="body1" sx={{ mb: 1.5 }}>
+                  <strong>Khách hàng:</strong>{' '}
+                  {(customers.find((c) => c.id === formData.customer) || user)?.full_name || 'N/A'} (
+                  {(customers.find((c) => c.id === formData.customer) || user)?.email || 'N/A'})
                 </Typography>
-                
-                <Grid container spacing={2}>
-                  <Grid item xs={6}>
-                    <Typography variant="body2" sx={{ fontFamily: 'Inter', color: 'text.secondary', fontWeight: 500 }}>
-                      Ngày nhận phòng
-                    </Typography>
-                    <Typography sx={{ fontFamily: 'Inter', fontWeight: 500 }}>
-                      {bookingPreview.checkInDate}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography variant="body2" sx={{ fontFamily: 'Inter', color: 'text.secondary', fontWeight: 500 }}>
-                      Ngày trả phòng
-                    </Typography>
-                    <Typography sx={{ fontFamily: 'Inter', fontWeight: 500 }}>
-                      {bookingPreview.checkOutDate}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography variant="body2" sx={{ fontFamily: 'Inter', color: 'text.secondary', fontWeight: 500 }}>
-                      Số đêm
-                    </Typography>
-                    <Typography sx={{ fontFamily: 'Inter', fontWeight: 500 }}>
-                      {bookingPreview.nights} đêm
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography variant="body2" sx={{ fontFamily: 'Inter', color: 'text.secondary', fontWeight: 500 }}>
-                      Số khách
-                    </Typography>
-                    <Typography sx={{ fontFamily: 'Inter', fontWeight: 500 }}>
-                      {bookingPreview.guestCount} khách
-                    </Typography>
-                  </Grid>
-                </Grid>
-                
-                <Divider sx={{ my: 3, bgcolor: '#DAA520' }} />
-                
-                <Grid container spacing={2}>
-                  <Grid item xs={6}>
-                    <Typography variant="body2" sx={{ fontFamily: 'Inter', color: 'text.secondary', fontWeight: 500 }}>
-                      Giá phòng/đêm
-                    </Typography>
-                    <Typography sx={{ fontFamily: 'Inter', fontWeight: 500 }}>
-                      {formatCurrency(bookingPreview.room?.price_per_night)}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography variant="body2" sx={{ fontFamily: 'Inter', color: 'text.secondary', fontWeight: 500 }}>
-                      Tổng giá trị
-                    </Typography>
-                    <Typography sx={{ fontFamily: 'Inter', fontWeight: 500 }}>
-                      {formatCurrency(bookingPreview.totalPrice)}
-                    </Typography>
-                  </Grid>
-                  {bookingPreview.discount && (
-                    <>
-                      <Grid item xs={6}>
-                        <Typography variant="body2" sx={{ fontFamily: 'Inter', color: 'text.secondary', fontWeight: 500 }}>
-                          Mã giảm giá
-                        </Typography>
-                        <Typography sx={{ fontFamily: 'Inter', fontWeight: 500 }}>
-                          {formData.discountCode}
-                        </Typography>
-                      </Grid>
-                      <Grid item xs={6}>
-                        <Typography variant="body2" sx={{ fontFamily: 'Inter', color: 'text.secondary', fontWeight: 500 }}>
-                          Giảm giá
-                        </Typography>
-                        <Typography sx={{ fontFamily: 'Inter', color: '#2E8B57', fontWeight: 600 }}>
-                          - {formatCurrency(bookingPreview.totalPrice - bookingPreview.discountedPrice)}
-                        </Typography>
-                      </Grid>
-                    </>
-                  )}
-                  <Grid item xs={12}>
-                    <Typography 
-                      variant="h6" 
-                      sx={{ 
-                        fontFamily: 'Inter', 
-                        color: '#8B4513', 
-                        textAlign: 'right',
-                        fontWeight: 700,
-                        mt: 1
-                      }}
-                    >
-                      Tổng thanh toán: {formatCurrency(bookingPreview.discountedPrice)}
-                    </Typography>
-                  </Grid>
-                </Grid>
-                
-                {bookingPreview.discount && (
-                  <Alert 
-                    severity="success" 
-                    sx={{ 
-                      mt: 3, 
-                      borderRadius: 3, 
-                      fontFamily: 'Inter',
-                      boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-                    }}
-                  >
-                    Bạn tiết kiệm {formatCurrency(bookingPreview.totalPrice - bookingPreview.discountedPrice)} với mã giảm giá!
-                  </Alert>
+                <Typography variant="body1" sx={{ mb: 1.5 }}>
+                  <strong>Phòng:</strong> {roomDetails?.room_number} ({roomDetails?.room_type_name || 'N/A'})
+                </Typography>
+                <Typography variant="body1" sx={{ mb: 1.5 }}>
+                  <strong>Ngày nhận phòng:</strong>{' '}
+                  {formData.checkInDate ? format(new Date(formData.checkInDate), 'dd/MM/yyyy', { locale: vi }) : 'N/A'}
+                </Typography>
+                <Typography variant="body1" sx={{ mb: 1.5 }}>
+                  <strong>Ngày trả phòng:</strong>{' '}
+                  {formData.checkOutDate ? format(new Date(formData.checkOutDate), 'dd/MM/yyyy', { locale: vi }) : 'N/A'}
+                </Typography>
+                <Typography variant="body1" sx={{ mb: 1.5 }}>
+                  <strong>Số đêm:</strong> {numberOfDays}
+                </Typography>
+                <Typography variant="body1" sx={{ mb: 1.5 }}>
+                  <strong>Số khách:</strong> {formData.guestCount}
+                </Typography>
+                <Typography variant="body1" sx={{ mb: 1.5 }}>
+                  <strong>Giá gốc:</strong> {pricing ? formatCurrency(pricing.original_price) : 'N/A'}
+                </Typography>
+                {pricing?.discount_info && (
+                  <Typography variant="body1" sx={{ mb: 1.5, color: '#2E8B57' }}>
+                    <strong>Giảm giá:</strong> {pricing.discount_info.discount_percentage}% (
+                    {formatCurrency(pricing.discount_info.amount_saved)})
+                  </Typography>
+                )}
+                <Typography variant="body1" sx={{ mb: 1.5, fontWeight: 600, color: '#DAA520' }}>
+                  <strong>Tổng giá:</strong> {pricing ? formatCurrency(pricing.total_price) : 'N/A'}
+                </Typography>
+                {formData.specialRequests && (
+                  <Typography variant="body1" sx={{ mb: 1.5 }}>
+                    <strong>Yêu cầu đặc biệt:</strong> {formData.specialRequests}
+                  </Typography>
                 )}
               </Box>
-            ) : (
-              <Typography sx={{ fontFamily: 'Inter', textAlign: 'center' }}>
-                Đang tải thông tin đặt phòng...
-              </Typography>
-            )}
-          </DialogContent>
-          <DialogActions sx={{ bgcolor: '#FFF8DC', px: 3, py: 2 }}>
-            <Button
-              onClick={handleClosePreviewDialog}
-              sx={{ 
-                fontFamily: 'Inter', 
-                color: '#DAA520',
-                fontWeight: 600,
-                '&:hover': {
-                  backgroundColor: 'rgba(218, 165, 32, 0.1)'
-                }
-              }}
-            >
-              Quay lại
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              variant="contained"
-              disabled={loading}
-              sx={{ 
-                bgcolor: '#DAA520', 
-                '&:hover': { 
-                  bgcolor: '#B8860B',
-                  boxShadow: '0 4px 12px rgba(184, 134, 11, 0.3)'
-                }, 
-                fontFamily: 'Inter', 
-                px: 4, 
-                py: 1.5,
-                fontWeight: 600,
-                textTransform: 'none',
-                transition: 'all 0.3s ease',
-                boxShadow: '0 2px 8px rgba(218, 165, 32, 0.3)'
-              }}
-            >
-              {loading ? <CircularProgress size={24} color="inherit" /> : 'Xác Nhận Đặt Phòng'}
-            </Button>
-          </DialogActions>
-        </Dialog>
-      </Container>
-    </Box>
+            </DialogContent>
+            <DialogActions>
+              <Button
+                onClick={() => setPreviewOpen(false)}
+                sx={{ fontFamily: 'Inter', color: '#DAA520' }}
+              >
+                Hủy
+              </Button>
+              <Button
+                onClick={confirmBooking}
+                variant="contained"
+                disabled={loading}
+                sx={{
+                  bgcolor: '#DAA520',
+                  '&:hover': { bgcolor: '#B8860B' },
+                  fontFamily: 'Inter',
+                  boxShadow: '0 4px 12px rgba(218, 165, 32, 0.3)',
+                }}
+              >
+                {loading ? <CircularProgress size={24} sx={{ color: 'white' }} /> : 'Xác Nhận Đặt Phòng'}
+              </Button>
+            </DialogActions>
+          </Dialog>
+        </Container>
+      </Box>
+    </ErrorBoundary>
   );
 };
 
