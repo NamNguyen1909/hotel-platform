@@ -134,6 +134,7 @@ class UserSerializer(ModelSerializer):
     def create(self, validated_data):
         password = validated_data.pop('password')
         avatar = validated_data.pop('avatar', None)
+        # Loại bỏ các trường không thể chỉnh sửa
         validated_data.pop('is_active', None)
         validated_data.pop('customer_type', None)
         user = User(
@@ -154,7 +155,6 @@ class UserSerializer(ModelSerializer):
     def update(self, instance, validated_data):
         password = validated_data.pop('password', None)
         avatar = validated_data.pop('avatar', None)
-
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
 
@@ -167,7 +167,6 @@ class UserSerializer(ModelSerializer):
         instance.save()
         instance.update_customer_type()
         return instance
-
 
 # Serializer cho danh sách User với thống kê
 class UserListSerializer(ModelSerializer):
@@ -188,6 +187,40 @@ class UserListSerializer(ModelSerializer):
         data['avatar'] = instance.avatar.url if instance.avatar else ''
         return data
 
+    def create(self, validated_data):
+        password = validated_data.pop('password')
+        avatar = validated_data.pop('avatar', None)
+        user = User(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            full_name=validated_data.get('full_name'),
+            phone=validated_data.get('phone'),
+            id_card=validated_data.get('id_card'),
+            address=validated_data.get('address'),
+            role=validated_data.get('role', 'customer'),
+        )
+        user.set_password(password)  
+        if avatar:
+            user.avatar = avatar
+        user.save()
+        return user
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        avatar = validated_data.pop('avatar', None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        if password:
+            instance.set_password(password)  
+
+        if avatar is not None:
+            instance.avatar = avatar
+
+        instance.save()
+        instance.update_customer_type()
+        return instance
 
 # Serializer cho Booking
 class BookingSerializer(ModelSerializer):
