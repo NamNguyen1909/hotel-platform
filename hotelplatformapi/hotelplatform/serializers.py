@@ -303,12 +303,37 @@ class BookingSerializer(ModelSerializer):
                     raise serializers.ValidationError(
                         f"Phòng {room.room_number} đã được đặt từ {conflict_booking.check_in_date.strftime('%d/%m/%Y %H:%M')} "
                         f"đến {conflict_booking.check_out_date.strftime('%d/%m/%Y %H:%M')} (Booking #{conflict_booking.id})"
-                    )
+                        )
                 
-                # Kiểm tra số lượng khách
-                if guest_count and guest_count > room.room_type.max_guests:
+                # THÔNG MINH: Sử dụng logic phân bổ khách tối ưu cho nhiều phòng
+                
+        # VALIDATION SỐ KHÁCH - Đặt sau phần conflict để có rooms và guest_count
+        if rooms and guest_count:
+            if len(rooms) > 1:
+                # Logic thông minh cho nhiều phòng
+                from .models import Booking
+                stay_days = (check_out_date - check_in_date).days
+                
+                # Gọi hàm phân bổ khách thông minh
+                pricing_result = Booking.calculate_price_for_multiple_rooms(rooms, guest_count, stay_days)
+                
+                # Lưu kết quả để có thể sử dụng sau này
+                attrs['_smart_pricing_result'] = pricing_result
+                attrs['total_price'] = pricing_result['total_price']
+                
+                # Kiểm tra xem có phòng nào bị quá tải không (validation linh hoạt)
+                max_total_capacity = sum(room.room_type.max_guests for room in rooms)
+                if guest_count > max_total_capacity * 1.5:  # Cho phép 150% sức chứa tối đa
+                    raise serializers.ValidationError(
+                        f"Tổng số khách ({guest_count}) vượt quá 150% sức chứa tối đa của các phòng "
+                        f"({max_total_capacity}). Vui lòng chọn thêm phòng hoặc giảm số khách."
+                    )
+            else:
+                # Logic cũ cho phòng đơn  
+                room = rooms[0]
+                if guest_count > room.room_type.max_guests:
                     raise serializers.ValidationError(f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách.")
-
+        
         return attrs
 
     def update(self, instance, validated_data):

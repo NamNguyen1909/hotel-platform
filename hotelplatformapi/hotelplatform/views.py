@@ -530,9 +530,16 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         return [IsAuthenticated()]
 
     def create(self, request):
-        """Tạo booking mới"""
+        """Tạo booking mới với logic tính giá thông minh"""
         serializer = BookingSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
+            # Lấy kết quả tính giá thông minh nếu có
+            smart_pricing = serializer.validated_data.get('_smart_pricing_result')
+            if smart_pricing:
+                # Log kết quả phân bổ để debug
+                logger.info(f"Smart pricing result: {smart_pricing['calculation_details']}")
+                logger.info(f"Total calculated price: {smart_pricing['total_price']}")
+            
             booking = serializer.save()
             booking.generate_qr_code()
             return Response(BookingDetailSerializer(booking).data, status=status.HTTP_201_CREATED)
@@ -633,11 +640,11 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-        # 👥 GUEST COUNT VALIDATION - Handle actual vs expected guest count
+        # GUEST COUNT VALIDATION - Handle actual vs expected guest count
         actual_guest_count = request.data.get('actual_guest_count')
         logger.info(f"Received actual_guest_count: {actual_guest_count} (type: {type(actual_guest_count)})")
         
-        #  VALIDATE GUEST COUNT INPUT
+        # VALIDATE GUEST COUNT INPUT
         if actual_guest_count is None:
             logger.error("Missing actual_guest_count in request data")
             return Response({"error": "Thiếu thông tin số khách thực tế"}, status=status.HTTP_400_BAD_REQUEST)
@@ -652,29 +659,66 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
             logger.error(f"Failed to convert actual_guest_count to int: {e}")
             return Response({"error": "Số khách thực tế không hợp lệ"}, status=status.HTTP_400_BAD_REQUEST)
 
-        #  DATABASE TRANSACTION - Atomic operation for data consistency
+        # CAPACITY VALIDATION - Kiểm tra sức chứa phòng trước khi check-in
+        total_max_capacity = sum(room.room_type.max_guests for room in booking.rooms.all())
+        max_allowed_guests = int(total_max_capacity * 1.5)  # 150% limit
+        
+        logger.info(f"Capacity validation check:")
+        logger.info(f"  - Total room capacity: {total_max_capacity}")
+        logger.info(f"  - 150% limit (max allowed): {max_allowed_guests}")
+        logger.info(f"  - Actual guest count: {actual_guest_count}")
+        logger.info(f"  - Validation: {actual_guest_count} > {max_allowed_guests} = {actual_guest_count > max_allowed_guests}")
+        
+        if total_max_capacity > 0 and actual_guest_count > max_allowed_guests:
+            error_message = f"Không thể check-in! Số khách thực tế ({actual_guest_count}) vượt quá giới hạn 150% sức chứa phòng (tối đa: {max_allowed_guests} khách cho {total_max_capacity} sức chứa cơ bản)."
+            logger.error(f"CAPACITY VALIDATION FAILED: {error_message}")
+            return Response({
+                "error": error_message,
+                "details": {
+                    "actual_guests": actual_guest_count,
+                    "room_capacity": total_max_capacity,
+                    "max_allowed": max_allowed_guests,
+                    "exceeded_by": actual_guest_count - max_allowed_guests
+                }
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Log successful capacity validation
+        logger.info(f"✓ Capacity validation passed: {actual_guest_count} guests within limit of {max_allowed_guests}")
+
+        # Note: Guest capacity validation với phụ thu được xử lý trong models.py 
+        # - Booking.calculate_actual_price() tính phụ thu tự động
+        # - RoomRental.clean() chỉ warning, không chặn (cho phép phụ thu)
+        # - Booking.calculate_price_for_multiple_rooms() phân bổ khách thông minh
+
+        # DATABASE TRANSACTION - Atomic operation for data consistency
         logger.info(f"Starting transaction for booking {pk}")
         with transaction.atomic():
             try:
-                #  Step 1: Update booking status and guest count
+                # Step 1: Update booking status and guest count
                 logger.info(f"Step 1: Updating booking status to CHECKED_IN")
                 booking.status = BookingStatus.CHECKED_IN
                 if actual_guest_count:
                     booking.guest_count = actual_guest_count
-                booking.save()
+                booking.save(update_fields=['status', 'guest_count', 'updated_at'])  # Skip full clean
                 
                 logger.info(f"Booking {booking.id} updated successfully. Creating RoomRental with guest_count={booking.guest_count}")
                 
-                #  Step 2: Create RoomRental record for occupancy tracking
+                # Step 2: Create RoomRental record for occupancy tracking
                 logger.info(f"Step 2: Creating RoomRental")
-                room_rental = RoomRental.objects.create(
+                
+                # TÍNH GIÁ THỰC TẾ với số khách actual - sử dụng logic có sẵn trong models
+                actual_total_price = booking.calculate_actual_price(actual_guest_count)
+                logger.info(f"Calculated actual price: {actual_total_price} (vs original: {booking.total_price})")
+                
+                room_rental = RoomRental(
                     customer=booking.customer,
                     booking=booking,
                     check_in_date=now,
                     check_out_date=booking.check_out_date,
                     guest_count=booking.guest_count,
-                    total_price=booking.total_price
+                    total_price=actual_total_price  # Sử dụng giá đã tính phụ thu
                 )
+                room_rental.save(skip_validation=True)  # Skip validation during creation
                 logger.info(f"RoomRental {room_rental.id} created successfully")
                 
                 #  Step 3: Link rooms to rental for M2M relationship
@@ -682,30 +726,16 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
                 room_rental.rooms.set(booking.rooms.all())
                 logger.info(f"Rooms set for RoomRental {room_rental.id}: {[room.room_number for room in booking.rooms.all()]}")
                 
-                #  VALIDATION - Post-transaction validation (temporarily disabled for debugging)
-                # try:
-                #     room_rental.full_clean()
-                #     logger.info(f"Check-in thành công cho Booking {booking.id}, phòng: {[room.room_number for room in booking.rooms.all()]}")
-                #     return Response({
-                #         "message": "Check-in đặt trước thành công",
-                #         "booking": BookingDetailSerializer(booking).data,
-                #         "rental": RoomRentalDetailSerializer(room_rental).data
-                #     })
-                # except ValidationError as ve:
-                #     # Nếu validation fail, xóa room_rental vừa tạo
-                #     room_rental.delete()
-                #     logger.error(f"Validation error for RoomRental: {str(ve)}")
-                #     return Response({"error": f"Validation error: {str(ve)}"}, status=status.HTTP_400_BAD_REQUEST)
-                
-                logger.info(f"Step 4: Preparing response")
+                # HOÀN THÀNH - Trả về response thành công
                 logger.info(f"Check-in thành công cho Booking {booking.id}, phòng: {[room.room_number for room in booking.rooms.all()]}")
-                response_data = {
-                    "message": "Check-in đặt trước thành công",
+                return Response({
+                    "message": "Check-in đặt trước thành công", 
                     "booking_id": booking.id,
-                    "rental_id": room_rental.id
-                }
-                logger.info(f"Returning response: {response_data}")
-                return Response(response_data)
+                    "rental_id": room_rental.id,
+                    "actual_guest_count": actual_guest_count,
+                    "calculated_price": str(actual_total_price),
+                    "original_price": str(booking.total_price)
+                })
             except ValidationError as e:
                 logger.error(f"Lỗi ValidationError khi check-in Booking {booking.id}: {str(e)}")
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

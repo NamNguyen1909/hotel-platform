@@ -260,6 +260,7 @@ class Command(BaseCommand):
                 rental = RoomRental.objects.create(
                     booking=booking,
                     customer=customer,
+                    check_in_date=check_in,
                     check_out_date=check_out,
                     total_price=total_price,
                     guest_count=guest_count,
@@ -382,6 +383,7 @@ class Command(BaseCommand):
             rental = RoomRental.objects.create(
                 booking=booking,
                 customer=customer,
+                check_in_date=check_in,
                 check_out_date=check_out,
                 total_price=total_price,
                 guest_count=booking.guest_count,

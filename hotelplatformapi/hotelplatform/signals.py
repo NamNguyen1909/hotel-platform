@@ -29,9 +29,9 @@ def create_superuser(sender, **kwargs):
                     password='123',
                     full_name='admin'
                 )
-                print("✅ Đã tạo superuser tự động: admin/123")
+                print("Đã tạo superuser tự động: admin/123")
             except Exception as e:
-                print(f"❌ Lỗi khi tạo superuser: {e}")
+                print(f"Lỗi khi tạo superuser: {e}")
 
 
 @receiver(pre_save, sender=Booking)

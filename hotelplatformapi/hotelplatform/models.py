@@ -231,8 +231,17 @@ class Booking(models.Model):
         # Không kiểm tra rooms trong clean() để tránh lỗi many-to-many
 
     def save(self, *args, **kwargs):
-        # Chỉ gọi full_clean() nếu không phải force_insert (dùng trong seed.py)
-        if not kwargs.get('force_insert', False):
+        # FIX: Skip validation khi update specific fields (như status) để tránh lỗi
+        skip_validation = kwargs.pop('skip_validation', False)
+        update_fields = kwargs.get('update_fields', None)
+        
+        # Chỉ gọi full_clean() nếu:
+        # - Không phải force_insert (dùng trong seed.py) 
+        # - Không phải skip_validation
+        # - Không phải update_fields specific (để tránh validation conflicts)
+        if (not kwargs.get('force_insert', False) and 
+            not skip_validation and 
+            not update_fields):
             self.full_clean()
         super().save(*args, **kwargs)
         # Note: Trạng thái phòng sẽ được cập nhật qua signals
@@ -244,23 +253,33 @@ class Booking(models.Model):
 
     def calculate_actual_price(self, actual_guest_count=None):
         """
-        Tính giá thực tế dựa trên số khách thực tế
+        Tính giá thực tế dựa trên số khách thực tế - SỬ DỤNG LOGIC PHÂN BỔ THÔNG MINH
         """
         if not actual_guest_count:
             actual_guest_count = self.guest_count
         
-        total_price = Decimal('0')
+        # SỬ DỤNG LOGIC PHÂN BỔ THÔNG MINH cho nhiều phòng
+        rooms = list(self.rooms.all())
+        if len(rooms) > 1:
+            stay_days = (self.check_out_date - self.check_in_date).days
+            pricing_result = self.calculate_price_for_multiple_rooms(rooms, actual_guest_count, stay_days)
+            return pricing_result['total_price']
         
-        for room in self.rooms.all():
+        # Logic cũ cho phòng đơn
+        total_price = Decimal('0')
+        for room in rooms:
             base_price = room.room_type.base_price
+            stay_days = (self.check_out_date - self.check_in_date).days
             
             # Tính phụ thu nếu vượt quá số khách tối đa
             if actual_guest_count > room.room_type.max_guests:
                 extra_guests = actual_guest_count - room.room_type.max_guests
                 surcharge = base_price * (room.room_type.extra_guest_surcharge / 100) * extra_guests
-                total_price += base_price + surcharge
+                room_total = (base_price + surcharge) * stay_days
             else:
-                total_price += base_price
+                room_total = base_price * stay_days
+                
+            total_price += room_total
         
         return total_price
 
@@ -393,15 +412,35 @@ class RoomRental(models.Model):
             return  # Không kiểm tra nếu thiếu dữ liệu ngày
         if self.check_in_date >= self.check_out_date:
             raise ValidationError("Ngày nhận phòng phải trước ngày trả phòng.")
+        
+        # ROOM CAPACITY VALIDATION - Enhanced for production
         if self.pk:  # Chỉ kiểm tra rooms nếu bản ghi đã được lưu
+            total_max_capacity = sum(room.room_type.max_guests for room in self.rooms.all())
+            
+            # WARNING: Nếu vượt quá 50% capacity tổng → có thể cần review
+            if total_max_capacity > 0 and self.guest_count > total_max_capacity * 1.5:
+                raise ValidationError(
+                    f"Số khách ({self.guest_count}) vượt quá 150% sức chứa tổng của các phòng "
+                    f"(tối đa: {total_max_capacity}). Vui lòng kiểm tra lại."
+                )
+            
+            # INFO: Nếu vượt capacity → sẽ có phụ thu (không chặn)
             for room in self.rooms.all():
                 if self.guest_count > room.room_type.max_guests:
-                    raise ValidationError(f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách.")
+                    # Chỉ log warning, không chặn (cho phép phụ thu)
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(
+                        f"Room {room.room_number}: {self.guest_count} guests > {room.room_type.max_guests} max_guests. "
+                        f"Surcharge will apply: {room.room_type.extra_guest_surcharge}%"
+                    )
 
     def save(self, *args, **kwargs):
-        # Chỉ gọi full_clean() nếu đây không phải là tạo mới từ objects.create()
-        # hoặc nếu đã có pk (đang update)
-        if self.pk or not getattr(self, '_state', {}).get('adding', True):
+        # FIX: Tránh validation conflicts khi tạo RoomRental từ check-in
+        # Chỉ validate nếu đây là update (đã có pk) và rooms đã được set
+        skip_validation = kwargs.pop('skip_validation', False)
+        
+        if not skip_validation and self.pk and self.rooms.exists():
             self.full_clean()
         super().save(*args, **kwargs)
 
