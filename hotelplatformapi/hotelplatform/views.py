@@ -17,9 +17,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.views import APIView
 from rest_framework.filters import SearchFilter, OrderingFilter
-# from django_filters.rest_framework import DjangoFilterBackend
-
-
+from rest_framework.exceptions import ValidationError
 
 # Django imports
 from django.utils import timezone
@@ -43,14 +41,14 @@ from .permissions import (
     IsBookingOwner, IsRoomRentalOwner, IsPaymentOwner, IsNotificationOwner, CanManageRooms,
     CanManageBookings, CanManagePayments, CanCreateDiscountCode, CanViewStats, CanCheckIn,
     CanCheckOut, CanConfirmBooking, CanGenerateQRCode, CanUpdateProfile, CanCancelUpdateBooking,
-    CanCreateNotification, CanModifyRoomType, CanManageCustomers, CanManageStaff, CanAccessAllBookings
+    CanCreateNotification, CanModifyRoomType, CanManageCustomers, CanManageStaff, CanAccessAllBookings,
+    CanCreateBooking
 )
 from .paginators import ItemPaginator, UserPaginator, RoomPaginator, RoomTypePaginator
 
 # Create your views here.
 def home(request):
     return HttpResponse('Welcome to Hotel Platform API!')
-
 
 # ================================ VIEWSETS ================================
 
@@ -270,7 +268,7 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
         serializer = UserListSerializer(customer_users, many=True)
         return Response(serializer.data)
 
-class RoomTypeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView,generics.DestroyAPIView):
+class RoomTypeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView, generics.DestroyAPIView):
     """
     ViewSet quản lý RoomType
     """
@@ -314,8 +312,7 @@ class RoomTypeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveA
             return Response(RoomTypeSerializer(room_type).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
-class RoomViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView,generics.DestroyAPIView):
+class RoomViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView, generics.DestroyAPIView):
     """
     ViewSet quản lý Room
     """
@@ -327,7 +324,6 @@ class RoomViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
     search_fields = ['room_number', 'room_type__name']
     ordering_fields = ['room_number', 'status', 'created_at']
     ordering = ['room_number']
-    # filterset_fields = ['status', 'room_type']
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -431,6 +427,13 @@ class RoomViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
+        if not available_rooms.exists():
+            message = f"No available rooms found from {check_in} to {check_out}."
+            return Response({
+                "message": message,
+                "data": []
+            })
+
         serializer = RoomSerializer(available_rooms, many=True)
         return Response(serializer.data)
 
@@ -464,7 +467,6 @@ class RoomViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
             'rooms': serializer.data
         })
 
-
 class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
     """
     ViewSet quản lý Booking
@@ -482,6 +484,22 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         if self.action == 'retrieve':
             return BookingDetailSerializer
         return BookingSerializer
+
+    def get_permissions(self):
+        """
+        Override để đảm bảo calculate_price không yêu cầu xác thực
+        """
+        if self.action == 'calculate_price':
+            return [AllowAny()]
+        elif self.action in ['list', 'retrieve']:
+            return [CanAccessAllBookings()]
+        elif self.action == 'create':
+            return [CanCreateBooking()]
+        elif self.action in ['confirm', 'checkin']:
+            return [CanConfirmBooking()]
+        elif self.action in ['cancel', 'update', 'partial_update']:
+            return [CanCancelUpdateBooking()]
+        return [IsAuthenticated()]
 
     def get_queryset(self):
         from .permissions import has_permission
@@ -511,23 +529,33 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
 
         return queryset
 
-    def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            return [CanAccessAllBookings()]
-        elif self.action in ['confirm', 'checkin']:
-            return [CanConfirmBooking()]
-        elif self.action in ['cancel', 'update', 'partial_update']:
-            return [CanCancelUpdateBooking()]
-        return [IsAuthenticated()]
-
     def create(self, request):
         """Tạo booking mới"""
+        logger.info(f"Booking creation requested by user {request.user.id}")
         serializer = BookingSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             booking = serializer.save()
-            booking.generate_qr_code()
-            return Response(BookingDetailSerializer(booking).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            logger.info(f"Booking {booking.id} created successfully for user {request.user.id}")
+            
+            # Prepare response data
+            response_data = BookingDetailSerializer(booking).data
+            
+            # Add discount info if discount was applied
+            if hasattr(booking, 'discount_applied') and booking.discount_applied:
+                # Calculate the original price before discount
+                original_price = booking.total_price / (1 - booking.discount_applied.discount_percentage / 100)
+                amount_saved = original_price - booking.total_price
+                discount_info = {
+                    'code': booking.discount_applied.code,
+                    'discount_percentage': booking.discount_applied.discount_percentage,
+                    'amount_saved': float(amount_saved)
+                }
+                response_data['discount_info'] = discount_info
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
+        else:
+            logger.error(f"Booking creation failed for user {request.user.id}: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def update(self, request, pk=None):
         """Cập nhật booking"""
@@ -537,9 +565,24 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         serializer = BookingSerializer(booking, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             booking = serializer.save()
-            return Response(BookingDetailSerializer(booking).data)
+            
+            # Prepare response data
+            response_data = BookingDetailSerializer(booking).data
+            
+            # Add discount info if discount was applied
+            if hasattr(booking, 'discount_applied') and booking.discount_applied:
+                # Calculate the original price before discount
+                original_price = booking.total_price / (1 - booking.discount_applied.discount_percentage / 100)
+                amount_saved = original_price - booking.total_price
+                discount_info = {
+                    'code': booking.discount_applied.code,
+                    'discount_percentage': booking.discount_applied.discount_percentage,
+                    'amount_saved': float(amount_saved)
+                }
+                response_data['discount_info'] = discount_info
+            
+            return Response(response_data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
     @action(detail=True, methods=['post'])
     def confirm(self, request, pk=None):
@@ -610,6 +653,132 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
                 logger.error(f"Lỗi khi check-in Booking {booking.id}: {str(e)}")
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=False, methods=['post'], url_path='calculate-price')
+    def calculate_price(self, request):
+        """
+        Tính giá tạm tính cho booking
+        """
+        room_id = request.data.get('room_id')
+        check_in_date = request.data.get('check_in_date')
+        check_out_date = request.data.get('check_out_date')
+        guest_count = request.data.get('guest_count')
+        discount_code = request.data.get('discount_code')
+
+        if not all([room_id, check_in_date, check_out_date, guest_count]):
+            return Response(
+                {"error": "Cần cung cấp room_id, check_in_date, check_out_date và guest_count"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Convert dates and make them timezone-aware
+            check_in_date = timezone.make_aware(
+                datetime.strptime(check_in_date, '%Y-%m-%d'),
+                timezone.get_default_timezone()
+            )
+            check_out_date = timezone.make_aware(
+                datetime.strptime(check_out_date, '%Y-%m-%d'),
+                timezone.get_default_timezone()
+            )
+            guest_count = int(guest_count)
+
+            # Validate dates
+            if check_in_date >= check_out_date:
+                return Response(
+                    {"error": "Ngày nhận phòng phải trước ngày trả phòng"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if check_in_date > timezone.now() + timedelta(days=28):
+                return Response(
+                    {"error": "Ngày nhận phòng không được vượt quá 28 ngày kể từ thời điểm hiện tại"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Get room
+            room = get_object_or_404(Room, pk=room_id)
+            if room.status != 'available':
+                return Response(
+                    {"error": f"Phòng {room.room_number} không khả dụng"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Check for overlapping bookings
+            overlapping_bookings = Booking.objects.filter(
+                rooms=room,
+                check_in_date__lt=check_out_date,
+                check_out_date__gt=check_in_date,
+                status__in=['pending', 'confirmed', 'checked_in']
+            )
+            if overlapping_bookings.exists():
+                overlap = overlapping_bookings.first()
+                overlap_start = max(check_in_date, overlap.check_in_date)
+                overlap_end = min(check_out_date, overlap.check_out_date)
+                return Response(
+                    {"error": f"Phòng {room.room_number} đã được đặt từ {overlap_start.date()} đến {overlap_end.date()}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Calculate number of days
+            days = (check_out_date - check_in_date).days
+            if days <= 0:
+                days = 1  # Minimum 1 day
+
+            # Calculate base price
+            room_type = room.room_type
+            base_price = room_type.base_price
+            total_price = base_price * days
+
+            # Add surcharge for extra guests
+            if guest_count > room_type.max_guests:
+                extra_guests = guest_count - room_type.max_guests
+                surcharge = base_price * (room_type.extra_guest_surcharge / 100) * extra_guests * days
+                total_price += surcharge
+
+            # Apply discount if provided
+            discount_info = None
+            if discount_code:
+                try:
+                    discount = DiscountCode.objects.get(code=discount_code)
+                    if discount.is_valid():
+                        discount_amount = total_price * (discount.discount_percentage / 100)
+                        total_price -= discount_amount
+                        discount_info = {
+                            'code': discount.code,
+                            'discount_percentage': float(discount.discount_percentage),
+                            'amount_saved': float(discount_amount)
+                        }
+                    else:
+                        return Response(
+                            {"error": "Mã giảm giá không hợp lệ hoặc đã hết hạn"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                except DiscountCode.DoesNotExist:
+                    return Response(
+                        {"error": "Mã giảm giá không tồn tại"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            return Response({
+                "message": "Tính giá thành công",
+                "original_price": float(base_price * days),
+                "total_price": float(total_price),
+                "discount_info": discount_info,
+                "days": days,
+                "guest_count": guest_count,
+                "room": RoomSerializer(room).data
+            })
+
+        except ValueError:
+            return Response(
+                {"error": "Định dạng ngày không hợp lệ, sử dụng YYYY-MM-DD"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Error calculating price: {str(e)}")
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 class RoomRentalViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
     """
@@ -689,12 +858,11 @@ class RoomRentalViewSet(viewsets.ViewSet, generics.ListAPIView, generics.Retriev
                 return Response({
                     "message": "Check-out thực tế thành công",
                     "rental": RoomRentalDetailSerializer(rental).data,
-                    "total_price": str(total_price),
+                    "total_price": str(rental.total_price),
                     "payment": PaymentSerializer(payment).data if payment else None
                 })
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 
 class PaymentViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
     """
@@ -735,7 +903,6 @@ class PaymentViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         payment.save()
         
         return Response(PaymentSerializer(payment).data)
-
 
 class DiscountCodeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
     """
@@ -788,7 +955,6 @@ class DiscountCodeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.Retri
         except DiscountCode.DoesNotExist:
             return Response({"valid": False, "error": "Mã giảm giá không tồn tại"})
 
-
 class NotificationViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
     """
     ViewSet quản lý Notification
@@ -838,7 +1004,6 @@ class NotificationViewSet(viewsets.ViewSet, generics.ListAPIView, generics.Retri
         )
         
         return Response({"message": "Đã đánh dấu tất cả thông báo đã đọc"})
-
 
 # ================================ QR CODE & CHECK-IN ================================
 
@@ -906,7 +1071,6 @@ class QRCodePaymentView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-
 class QRCodeGenerateView(APIView):
     """
     API để tạo QR code cho booking (chỉ admin/staff)
@@ -940,7 +1104,6 @@ class QRCodeGenerateView(APIView):
             return Response({"error": "Không tìm thấy booking"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 
 # ================================ STATS & ANALYTICS ================================
 
@@ -1150,7 +1313,6 @@ class StatsView(APIView):
             }
         })
 
-
 # ======================================== VNPay ========================================
 def vnpay_encode(value):
     # Encode giống VNPay: dùng quote_plus để chuyển space thành '+'
@@ -1291,7 +1453,6 @@ def vnpay_redirect(request):
     else:
         deeplink = f"bemmobile://payment-result?vnp_ResponseCode={vnp_ResponseCode}&message={urllib.parse.quote(message)}"
         return redirect(deeplink)
-
 
 class RoomImageViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView, generics.DestroyAPIView):
     """

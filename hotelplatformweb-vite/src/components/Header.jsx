@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import {
   AppBar,
@@ -43,6 +42,7 @@ import {
   Receipt,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
+import api from '../services/apis';
 import authUtils from '../services/auth';
 
 // Định nghĩa menu items theo role
@@ -55,7 +55,7 @@ const menuItemsByRole = {
   ],
   owner: [
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
-    {text: 'Thống kê', icon: <Assessment />, path: '/analytics' },
+    { text: 'Thống kê', icon: <Assessment />, path: '/analytics' },
     { text: 'Quản lý phòng', icon: <Hotel />, path: '/rooms-management' },
     { text: 'Quản lý khách hàng', icon: <People />, path: '/customers-management' },
     { text: 'Quản lý nhân viên', icon: <AdminPanelSettings />, path: '/staffs-management' },
@@ -75,8 +75,6 @@ const menuItemsByRole = {
   guest: [
     { text: 'Trang chủ', icon: <Home />, path: '/' },
     { text: 'Phòng', icon: <Hotel />, path: '/rooms' },
-    // { text: 'Đăng nhập', icon: <Login />, path: '/login' },
-    // { text: 'Đăng ký', icon: <PersonAdd />, path: '/register' },
   ],
 };
 
@@ -90,7 +88,7 @@ const Header = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState('guest');
-  const [notifications, setNotifications] = useState(3); // Mock notifications
+  const [notifications, setNotifications] = useState(0);
 
   // Lấy thông tin user và role
   useEffect(() => {
@@ -103,15 +101,48 @@ const Header = () => {
         } catch (error) {
           console.error('Error fetching user info:', error);
           setUserRole('guest');
+          setNotifications(0);
         }
       } else {
         setUser(null);
         setUserRole('guest');
+        setNotifications(0);
       }
     };
 
     fetchUserInfo();
-  }, []); // Chỉ gọi 1 lần khi component mount
+  }, []);
+
+  // Polling để lấy thông báo mới mỗi 30 giây
+  useEffect(() => {
+    let intervalId;
+
+    const fetchNotifications = async () => {
+      if (authUtils.isAuthenticated()) {
+        try {
+          const response = await api.get('/notifications/');
+          const unreadCount = response.data.unread_count || 0;
+          setNotifications(unreadCount);
+        } catch (error) {
+          console.error('Error fetching notifications:', error);
+          setNotifications(0);
+        }
+      } else {
+        setNotifications(0);
+      }
+    };
+
+    if (authUtils.isAuthenticated()) {
+      fetchNotifications(); // Gọi ngay lần đầu
+      intervalId = setInterval(fetchNotifications, 30000); // Polling mỗi 30 giây
+    }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId); // Dọn dẹp interval khi component unmount
+      }
+    };
+  }, [user]);
 
   const handleOpenUserMenu = (event) => {
     setAnchorElUser(event.currentTarget);
@@ -132,15 +163,36 @@ const Header = () => {
   };
 
   const handleLogout = async () => {
-    await authUtils.logout();
+    try {
+      await authUtils.logout();
+      setUser(null);
+      setUserRole('guest');
+      setNotifications(0);
+      handleNavigation('/');
+    } catch (error) {
+      console.error('Error logging out:', error);
+    }
     handleCloseUserMenu();
+  };
+
+  const handleNotificationsClick = async () => {
+    if (authUtils.isAuthenticated()) {
+      try {
+        await api.post('/notifications/mark-all-read/');
+        setNotifications(0);
+        handleNavigation('/notifications');
+      } catch (error) {
+        console.error('Error marking notifications as read:', error);
+        handleNavigation('/notifications');
+      }
+    }
   };
 
   // Lấy menu items theo role hiện tại
   const menuItems = menuItemsByRole[userRole] || menuItemsByRole.guest;
 
   // User menu items
-  const userMenuItems = authUtils.isAuthenticated() 
+  const userMenuItems = authUtils.isAuthenticated()
     ? [
         { text: 'Hồ sơ', action: () => handleNavigation('/profile') },
         { text: 'Cài đặt', action: () => handleNavigation('/account-settings') },
@@ -273,7 +325,7 @@ const Header = () => {
                   <IconButton
                     size="large"
                     color="inherit"
-                    onClick={() => handleNavigation('/notifications')}
+                    onClick={handleNotificationsClick}
                     sx={{ mr: 1 }}
                   >
                     <Badge badgeContent={notifications} color="error">
@@ -345,8 +397,8 @@ const Header = () => {
         }}
         sx={{
           display: { xs: 'block', md: 'none' },
-          '& .MuiDrawer-paper': { 
-            boxSizing: 'border-box', 
+          '& .MuiDrawer-paper': {
+            boxSizing: 'border-box',
             width: 280,
             background: 'linear-gradient(145deg, #ffffff 0%, #fefefe 100%)',
           },
@@ -357,4 +409,5 @@ const Header = () => {
     </>
   );
 };
+
 export default Header;
