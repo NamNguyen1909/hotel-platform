@@ -626,8 +626,10 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         now = timezone.now()
         logger.info(f"Current time: {now}, Booking check-in time: {booking.check_in_date}")
         logger.info("Time validation skipped for testing purposes - Enable for production")
-        # if now.date() < booking.check_in_date:
-        #     return Response({"error": "Chưa đến ngày check-in"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Comment để test checkin / Uncomment cho production
+        if now.date() < booking.check_in_date.date():
+            return Response({"error": "Chưa đến ngày check-in"}, status=status.HTTP_400_BAD_REQUEST)
 
         #  ROOM STATUS VALIDATION - Ensure all rooms are available for check-in
         logger.info(f"Checking room statuses for booking {pk}")

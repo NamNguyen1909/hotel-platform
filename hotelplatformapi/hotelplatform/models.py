@@ -417,11 +417,12 @@ class RoomRental(models.Model):
         if self.pk:  # Chỉ kiểm tra rooms nếu bản ghi đã được lưu
             total_max_capacity = sum(room.room_type.max_guests for room in self.rooms.all())
             
-            # WARNING: Nếu vượt quá 50% capacity tổng → có thể cần review
+            # VALIDATION: Nếu vượt quá 150% capacity tổng → chặn hoàn toàn
             if total_max_capacity > 0 and self.guest_count > total_max_capacity * 1.5:
                 raise ValidationError(
                     f"Số khách ({self.guest_count}) vượt quá 150% sức chứa tổng của các phòng "
-                    f"(tối đa: {total_max_capacity}). Vui lòng kiểm tra lại."
+                    f"(tối đa: {int(total_max_capacity * 1.5)} khách cho {total_max_capacity} sức chứa cơ bản). "
+                    f"Vui lòng kiểm tra lại."
                 )
             
             # INFO: Nếu vượt capacity → sẽ có phụ thu (không chặn)
