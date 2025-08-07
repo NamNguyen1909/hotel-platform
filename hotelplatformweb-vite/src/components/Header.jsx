@@ -44,6 +44,7 @@ import {
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/apis';
 import authUtils from '../services/auth';
+import { useNotificationsPolling } from '../hooks/useSmartPolling';
 
 // Định nghĩa menu items theo role
 const menuItemsByRole = {
@@ -113,36 +114,27 @@ const Header = () => {
     fetchUserInfo();
   }, []);
 
-  // Polling để lấy thông báo mới mỗi 30 giây
-  useEffect(() => {
-    let intervalId;
-
-    const fetchNotifications = async () => {
-      if (authUtils.isAuthenticated()) {
-        try {
-          const response = await api.get('/notifications/');
-          const unreadCount = response.data.unread_count || 0;
-          setNotifications(unreadCount);
-        } catch (error) {
-          console.error('Error fetching notifications:', error);
-          setNotifications(0);
-        }
-      } else {
+  // Smart Polling với Page Visibility API - sử dụng custom hook
+  const fetchNotifications = async () => {
+    if (authUtils.isAuthenticated()) {
+      try {
+        const response = await api.get('/notifications/');
+        const unreadCount = response.data.unread_count || 0;
+        setNotifications(unreadCount);
+      } catch (error) {
+        console.error('Error fetching notifications:', error);
         setNotifications(0);
       }
-    };
-
-    if (authUtils.isAuthenticated()) {
-      fetchNotifications(); // Gọi ngay lần đầu
-      intervalId = setInterval(fetchNotifications, 30000); // Polling mỗi 30 giây
+    } else {
+      setNotifications(0);
     }
+  };
 
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId); // Dọn dẹp interval khi component unmount
-      }
-    };
-  }, [user]);
+  // Sử dụng custom hook cho notifications polling
+  useNotificationsPolling(
+    fetchNotifications, 
+    authUtils.isAuthenticated() && user // Chỉ enable khi user đã authenticated
+  );
 
   const handleOpenUserMenu = (event) => {
     setAnchorElUser(event.currentTarget);

@@ -2,34 +2,37 @@ import api, { endpoints } from './apis';
 
 // Authentication utilities
 const authUtils = {
+  _userCache: null, // Simple cache cho user data
+  _cacheExpiry: 0,  // Cache expiry timestamp
+  
   // Check if user is authenticated
   isAuthenticated: () => {
     const token = localStorage.getItem('access_token');
     return !!token;
   },
 
-  // Get current user info
-  getCurrentUser: async () => {
+  // Get current user info with caching
+  getCurrentUser: async (forceRefresh = false) => {
+    const now = Date.now();
+    
+    // Return cached data if valid (5 minutes cache)
+    if (!forceRefresh && authUtils._userCache && now < authUtils._cacheExpiry) {
+      return authUtils._userCache;
+    }
+    
     try {
       const response = await api.get(endpoints.users.profile);
+      // Cache for 5 minutes
+      authUtils._userCache = response.data;
+      authUtils._cacheExpiry = now + 5 * 60 * 1000; // 5 minutes
       return response.data;
     } catch (error) {
       console.error('Error getting current user:', error);
-      if (process.env.NODE_ENV === 'development') {
-        // Return mock data only in development
-        const token = localStorage.getItem('access_token');
-        if (token) {
-          return {
-            id: 1,
-            username: 'demo_user',
-            email: 'demo@hotel.com',
-            full_name: 'Demo User',
-            role: 'customer', // Change to 'customer' to match backend
-            avatar: null,
-          };
-        }
-      }
-      throw error; // Throw error in production
+      // Clear cache and tokens if user info fetch fails (authentication error)
+      authUtils._userCache = null;
+      authUtils._cacheExpiry = 0;
+      authUtils.clearTokens();
+      return null;
     }
   },
 
@@ -93,11 +96,14 @@ const authUtils = {
     api.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
   },
 
-  // Clear tokens
+  // Clear tokens and cache
   clearTokens: () => {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     delete api.defaults.headers.common['Authorization'];
+    // Clear user cache
+    authUtils._userCache = null;
+    authUtils._cacheExpiry = 0;
   },
 
   // Setup axios interceptors

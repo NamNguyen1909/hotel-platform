@@ -28,6 +28,7 @@ import {
 } from '@mui/icons-material';
 import api, { endpoints } from '../services/apis';
 import authUtils from '../services/auth';
+import { useBookingsPolling } from '../hooks/useSmartPolling';
 
 // Format giá tiền
 const formatPrice = (price) => {
@@ -171,6 +172,55 @@ const Bookings = () => {
     fetchBookings();
   }, [navigate, paginationModel, searchTerm]);
 
+  // Function để refresh bookings data
+  const refreshBookings = async () => {
+    // Chỉ refresh khi không đang loading và có quyền truy cập
+    if (!loading && authUtils.isAuthenticated()) {
+      try {
+        const user = await authUtils.getCurrentUser();
+        if (['staff', 'admin', 'owner'].includes(user?.role)) {
+          // Refresh data trong background, không hiển thị loading spinner
+          const response = await api.get(endpoints.bookings.list, {
+            params: {
+              page: paginationModel.page + 1,
+              page_size: paginationModel.pageSize,
+              search: searchTerm.trim() || undefined,
+            },
+          });
+
+          const fetchedBookings = (response.data.results || []).map((booking) => ({
+            id: booking.id,
+            customer_name: booking.customer_name || 'Khách hàng không xác định',
+            customer_phone: booking.customer_phone || 'N/A',
+            room_numbers: booking.room_details
+              ?.map((room) => room.room_number)
+              .join(', ') || 'N/A',
+            check_in_date: booking.check_in_date,
+            check_out_date: booking.check_out_date,
+            total_price: parseFloat(booking.total_price || 0),
+            guest_count: booking.guest_count || 0,
+            status: booking.status,
+            room_details: booking.room_details || [],
+            rentals: booking.rentals || [],
+          }));
+
+          setBookings(fetchedBookings);
+          setRowCount(response.data.count || 0);
+          console.log('🔄 Bookings auto-refreshed');
+        }
+      } catch (error) {
+        console.error('Auto-refresh error:', error);
+        // Không hiển thị error cho auto-refresh để tránh làm phiền user
+      }
+    }
+  };
+
+  // Smart Auto-refresh với custom hook - 2 phút interval
+  const { isRunning } = useBookingsPolling(
+    refreshBookings,
+    !loading && authUtils.isAuthenticated()
+  );
+
   // Xử lý tìm kiếm
   const handleSearch = (event) => {
     setSearchTerm(event.target.value);
@@ -275,13 +325,8 @@ const Bookings = () => {
   // Xử lý check-out
   const handleCheckOut = async (bookingId) => {
     try {
-      const booking = bookings.find((b) => b.id === bookingId);
-      if (!booking?.rentals?.length) {
-        setError('Không tìm thấy thông tin thuê phòng cho booking này.');
-        return;
-      }
-      const rentalId = booking.rentals[0].id;
-      await api.post(endpoints.rentals.checkout(rentalId));
+      // Sử dụng booking checkout endpoint thay vì rental checkout
+      await api.post(endpoints.bookings.checkout(bookingId));
       setBookings((prev) =>
         prev.map((booking) =>
           booking.id === bookingId ? { ...booking, status: 'checked_out' } : booking
