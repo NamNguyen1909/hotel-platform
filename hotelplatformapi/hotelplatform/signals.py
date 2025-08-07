@@ -2,6 +2,7 @@ from django.db.models.signals import post_save, pre_save, post_migrate, m2m_chan
 from django.dispatch import receiver
 from django.contrib.auth import get_user_model
 from django.apps import apps
+from django.utils import timezone
 from .models import Booking, BookingStatus, Notification, RoomRental, Payment, Room
 
 User = get_user_model()
@@ -210,8 +211,35 @@ def room_rental_post_save(sender, instance, created, **kwargs):
     """
     Signal xử lý sau khi RoomRental được lưu
     """
+    # Tự động tạo Payment khi RoomRental được check-out (có actual_check_out_date)
+    if not created and instance.actual_check_out_date:
+        # Kiểm tra xem đã có Payment chưa
+        existing_payment = Payment.objects.filter(rental=instance).first()
+        if not existing_payment:
+            # Tạo Payment record
+            try:
+                payment = Payment.objects.create(
+                    customer=instance.customer,
+                    rental=instance,
+                    amount=instance.total_price,
+                    status=False,  # Chưa thanh toán, cần thanh toán tại quầy
+                    payment_method='cash',  # Mặc định thanh toán tiền mặt
+                    transaction_id=f"PAY_{instance.id}_{timezone.now().strftime('%Y%m%d_%H%M%S')}"
+                )
+                print(f"✅ Auto-created Payment {payment.id} for RoomRental {instance.id}: {payment.amount} VND")
+                
+                # Tạo thông báo cho khách hàng
+                Notification.objects.create(
+                    user=instance.customer,
+                    notification_type='booking_confirmation',
+                    title='Hóa đơn đã được tạo',
+                    message=f'Hóa đơn thanh toán {payment.transaction_id} đã được tạo. Số tiền: {payment.amount:,.0f} VND. Vui lòng thanh toán tại quầy.'
+                )
+                
+            except Exception as e:
+                print(f"❌ Error creating Payment for RoomRental {instance.id}: {e}")
+    
     # RoomRental không ảnh hưởng total_bookings count nên không cần refresh stats
-    pass
 
 
 @receiver(post_save, sender=Payment)  

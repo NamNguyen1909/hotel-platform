@@ -153,6 +153,7 @@ export const endpoints = {
     create: '/rentals/',
     update: (id) => `/rentals/${id}/`,
     delete: (id) => `/rentals/${id}/`,
+    checkout: (id) => `/rentals/${id}/checkout/`,
     active: '/rentals/active/',
     history: '/rentals/history/',
   },

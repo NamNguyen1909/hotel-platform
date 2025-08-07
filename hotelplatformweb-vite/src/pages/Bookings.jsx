@@ -275,13 +275,8 @@ const Bookings = () => {
   // Xử lý check-out
   const handleCheckOut = async (bookingId) => {
     try {
-      const booking = bookings.find((b) => b.id === bookingId);
-      if (!booking?.rentals?.length) {
-        setError('Không tìm thấy thông tin thuê phòng cho booking này.');
-        return;
-      }
-      const rentalId = booking.rentals[0].id;
-      await api.post(endpoints.rentals.checkout(rentalId));
+      // Sử dụng booking checkout endpoint thay vì rental checkout
+      await api.post(endpoints.bookings.checkout(bookingId));
       setBookings((prev) =>
         prev.map((booking) =>
           booking.id === bookingId ? { ...booking, status: 'checked_out' } : booking

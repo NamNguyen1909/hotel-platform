@@ -507,6 +507,8 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
             return [CanCreateBooking()]
         elif self.action in ['confirm', 'checkin']:
             return [CanConfirmBooking()]
+        elif self.action in ['checkout']:
+            return [CanCheckOut()]
         elif self.action in ['cancel', 'update', 'partial_update']:
             return [CanCancelUpdateBooking()]
         return [IsAuthenticated()]
@@ -786,6 +788,96 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
             except Exception as e:
                 logger.error(f"Lỗi Exception khi check-in Booking {booking.id}: {str(e)}")
+                return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def checkout(self, request, pk=None):
+        """CHECK-OUT LOGIC - Comprehensive checkout process for bookings"""
+        logger.info(f"=== Starting check-out process for booking {pk} ===")
+        logger.info(f"Check-out request for booking {pk}")
+        logger.info(f"User: {request.user}, Role: {getattr(request.user, 'role', 'No role')}")
+        
+        # BOOKING VALIDATION - Ensure booking exists and is in correct state
+        try:
+            booking = get_object_or_404(Booking, pk=pk)
+            logger.info(f"Found booking {pk}: status={booking.status}, customer={booking.customer}")
+        except Exception as e:
+            logger.error(f"Error getting booking {pk}: {e}")
+            return Response({"error": f"Booking not found: {e}"}, status=status.HTTP_404_NOT_FOUND)
+
+        # STATUS VALIDATION - Only checked-in bookings can be checked out
+        if booking.status != BookingStatus.CHECKED_IN:
+            logger.warning(f"Booking {pk} status is {booking.status}, not CHECKED_IN")
+            return Response(
+                {"error": "Booking chưa check-in hoặc đã check-out"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # FIND ASSOCIATED ROOM RENTAL
+        try:
+            room_rental = RoomRental.objects.get(booking=booking)
+            logger.info(f"Found RoomRental {room_rental.id} for booking {pk}")
+        except RoomRental.DoesNotExist:
+            logger.error(f"No RoomRental found for booking {pk}")
+            return Response(
+                {"error": "Không tìm thấy thông tin thuê phòng"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # CHECK IF ALREADY CHECKED OUT
+        if room_rental.actual_check_out_date:
+            logger.warning(f"RoomRental {room_rental.id} đã check-out: {room_rental.actual_check_out_date}")
+            return Response(
+                {"error": "Đã check-out trước đó"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # DATABASE TRANSACTION - Atomic operation for data consistency
+        logger.info(f"Starting transaction for booking checkout {pk}")
+        now = timezone.now()
+        
+        with transaction.atomic():
+            try:
+                # Step 1: Update booking status to CHECKED_OUT
+                logger.info(f"Step 1: Updating booking status to CHECKED_OUT")
+                booking.status = BookingStatus.CHECKED_OUT
+                booking.save(update_fields=['status', 'updated_at'])
+                logger.info(f"Booking {booking.id} status updated to CHECKED_OUT")
+                
+                # Step 2: Update RoomRental with actual checkout time
+                logger.info(f"Step 2: Setting actual_check_out_date for RoomRental")
+                room_rental.actual_check_out_date = now
+                room_rental.save(update_fields=['actual_check_out_date'])
+                logger.info(f"RoomRental {room_rental.id} actual_check_out_date set to {now}")
+                
+                # Step 3: Create Payment record (will be handled by RoomRental signals)
+                # The payment will be automatically created by the RoomRental post_save signal
+                
+                # Step 4: Room status will be updated automatically by Booking signals
+                # Signal will change room status from 'occupied' to 'available'
+                
+                # Step 5: Get the created payment for response
+                payment = room_rental.payments.last()
+                
+                # HOÀN THÀNH - Trả về response thành công
+                logger.info(f"Check-out thành công cho Booking {booking.id}")
+                logger.info(f"Rooms will be set to available: {[room.room_number for room in booking.rooms.all()]}")
+                
+                return Response({
+                    "message": "Check-out thành công", 
+                    "booking_id": booking.id,
+                    "rental_id": room_rental.id,
+                    "check_out_time": now.isoformat(),
+                    "final_price": str(room_rental.total_price),
+                    "payment": PaymentSerializer(payment).data if payment else None,
+                    "booking": BookingDetailSerializer(booking).data
+                })
+                
+            except ValidationError as e:
+                logger.error(f"Lỗi ValidationError khi check-out Booking {booking.id}: {str(e)}")
+                return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as e:
+                logger.error(f"Lỗi Exception khi check-out Booking {booking.id}: {str(e)}")
                 return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['post'], url_path='calculate-price')
