@@ -165,7 +165,6 @@ class UserSerializer(ModelSerializer):
             instance.avatar = avatar
 
         instance.save()
-        instance.update_customer_type()
         return instance
 
 # Serializer cho danh sách User với thống kê
@@ -219,7 +218,6 @@ class UserListSerializer(ModelSerializer):
             instance.avatar = avatar
 
         instance.save()
-        instance.update_customer_type()
         return instance
 
 # Serializer cho Booking
@@ -582,11 +580,12 @@ class UserDetailSerializer(ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'email', 'full_name', 'phone', 'id_card', 'address', 'role', 'avatar',
-            'is_active', 'created_at', 'updated_at', 'bookings', 'rentals', 'notifications'
+            'is_active', 'created_at', 'updated_at', 'customer_type', 'total_bookings', 'total_spent',
+            'bookings', 'rentals', 'notifications'
         ]
         read_only_fields = [
-            'id', 'username', 'email', 'is_active', 'created_at', 'updated_at',
-            'bookings', 'rentals', 'notifications'
+            'id', 'username', 'email', 'is_active', 'created_at', 'updated_at', 'customer_type', 
+            'total_bookings', 'total_spent', 'bookings', 'rentals', 'notifications'
         ]
 
 

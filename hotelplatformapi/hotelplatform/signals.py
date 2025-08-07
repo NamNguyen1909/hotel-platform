@@ -75,6 +75,16 @@ def booking_post_save(sender, instance, created, **kwargs):
             title='Đặt phòng thành công',
             message=f'Đặt phòng của bạn đã được tạo thành công. Mã booking: {instance.id}'
         )
+        
+        # CÂP NHẬT TOTAL BOOKINGS VÀ CUSTOMER TYPE CHO USER
+        # Cập nhật tự động số lần booking và loại khách hàng khi tạo booking mới
+        if instance.customer and instance.customer.role == 'customer':
+            try:
+                # Gọi method refresh_customer_stats để cập nhật toàn bộ thống kê customer
+                instance.customer.refresh_customer_stats()
+                print(f"✅ Updated customer stats for {instance.customer.full_name}: total_bookings={instance.customer.total_bookings}, customer_type={instance.customer.customer_type}")
+            except Exception as e:
+                print(f"❌ Error updating customer stats for booking {instance.id}: {e}")
     
     # Tạo thông báo khi booking được xác nhận
     if instance.status == BookingStatus.CONFIRMED:
@@ -176,11 +186,6 @@ def booking_rooms_changed(sender, instance, action, **kwargs):
                         room.status = 'available'
                         room.save()
                         print(f"Room {room.room_number} status changed to available")
-            
-            # CẬP NHẬT CUSTOMER STATS: Sau khi thêm rooms vào booking
-            if instance.customer and instance.customer.role == 'customer':
-                instance.customer.update_customer_type()
-                print(f"Customer {instance.customer.username} stats updated")
 
         except Exception as e:
             print(f"Error in booking_rooms_changed signal: {e}")
@@ -205,8 +210,8 @@ def room_rental_post_save(sender, instance, created, **kwargs):
     """
     Signal xử lý sau khi RoomRental được lưu
     """
-    if instance.customer and instance.customer.role == 'customer':
-        instance.customer.update_customer_type()
+    # RoomRental không ảnh hưởng total_bookings count nên không cần refresh stats
+    pass
 
 
 @receiver(post_save, sender=Payment)  
@@ -214,8 +219,10 @@ def payment_post_save(sender, instance, created, **kwargs):
     """
     Signal xử lý sau khi Payment được lưu
     """
-    if instance.customer and instance.customer.role == 'customer':
-        instance.customer.update_customer_type()
+    # Chỉ refresh customer stats khi payment status = True (đã thanh toán)
+    # vì chỉ khi đó mới ảnh hưởng total_spent
+    if instance.customer and instance.customer.role == 'customer' and instance.status:
+        instance.customer.refresh_customer_stats()
         
     # Tạo thông báo khi thanh toán thành công
     if created and instance.status:

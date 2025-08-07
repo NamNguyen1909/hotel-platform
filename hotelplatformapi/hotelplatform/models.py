@@ -90,8 +90,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return self.full_name or self.username
 
-    def update_customer_type(self):
-        """Cập nhật loại khách hàng dựa trên số lần đặt phòng và tổng chi tiêu"""
+    def refresh_customer_stats(self):
+        """
+        Cập nhật toàn bộ thống kê khách hàng:
+        - Tổng số lần booking (total_bookings)
+        - Tổng chi tiêu (total_spent) 
+        - Loại khách hàng (customer_type)
+        """
         
         bookings_count = self.bookings.count()
         
