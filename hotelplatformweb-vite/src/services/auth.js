@@ -15,21 +15,9 @@ const authUtils = {
       return response.data;
     } catch (error) {
       console.error('Error getting current user:', error);
-      if (process.env.NODE_ENV === 'development') {
-        // Return mock data only in development
-        const token = localStorage.getItem('access_token');
-        if (token) {
-          return {
-            id: 1,
-            username: 'demo_user',
-            email: 'demo@hotel.com',
-            full_name: 'Demo User',
-            role: 'customer', // Change to 'customer' to match backend
-            avatar: null,
-          };
-        }
-      }
-      throw error; // Throw error in production
+      // Clear tokens if user info fetch fails (authentication error)
+      authUtils.clearTokens();
+      return null;
     }
   },
 

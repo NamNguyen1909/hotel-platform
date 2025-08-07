@@ -31,17 +31,16 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('hotel-admin/', admin_site.urls),  # Custom admin site
     
-    # App URLs - chỉ include 1 lần
+    # App URLs
     path('', include('hotelplatform.urls')),  # Root URLs
-    # path('api/', include('hotelplatform.urls')),  # API URLs với prefix
     
     # JWT authentication endpoints
     path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'), 
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/auth/token/blacklist/', TokenBlacklistView.as_view(), name='token_blacklist'),
     
-    # OAuth2 endpoints
-    path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')), 
+    # OAuth2 endpoints (for future third-party authentication)
+    path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')),
     
     # Swagger documentation
     re_path(r'^swagger(?P<format>\.json|\.yaml)$', schema_view.without_ui(cache_timeout=0), name='schema-json'), 

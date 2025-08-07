@@ -43,20 +43,20 @@ INSTALLED_APPS = [
     'rest_framework',  # Django REST Framework
     'rest_framework_simplejwt',  # JWT authentication
     'rest_framework_simplejwt.token_blacklist',  # JWT blacklist
-    'oauth2_provider',  # Django OAuth Toolkit
+    'oauth2_provider',  # Django OAuth Toolkit (for future third-party login)
     'corsheaders',  # CORS headers
 ]
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  # CORS middleware
-    'django.middleware.common.CommonMiddleware',  # Đặt trước OAuth2 middleware
+    'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'oauth2_provider.middleware.OAuth2TokenMiddleware',  # OAuth2 middleware
+    'oauth2_provider.middleware.OAuth2TokenMiddleware',  # OAuth2 middleware (for future use)
 ]
 
 ROOT_URLCONF = 'hotelplatformapi.urls'
@@ -139,7 +139,7 @@ cloudinary.config(
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 STATICFILES_STORAGE = 'cloudinary_storage.storage.StaticCloudinaryStorage'
 
-# OAuth2 Settings (sử dụng token bình thường)
+# OAuth2 Settings (for future third-party authentication integration)
 OAUTH2_PROVIDER = {
     'SCOPES': {
         'read': 'Read scope',
@@ -149,7 +149,6 @@ OAUTH2_PROVIDER = {
     'REFRESH_TOKEN_EXPIRE_SECONDS': 3600 * 24 * 7,  # 7 days
     'AUTHORIZATION_CODE_EXPIRE_SECONDS': 600,  # 10 minutes
     'ROTATE_REFRESH_TOKEN': True,
-    # Thêm dòng này để hỗ trợ password grant type
     'APPLICATION_MODEL': 'oauth2_provider.Application',
     'GRANT_TYPES': {
         'authorization-code': 'oauth2_provider.grant_types.AuthorizationCodeGrantType',
@@ -162,7 +161,7 @@ OAUTH2_PROVIDER = {
     'RESOURCE_SERVER_INTROSPECTION_CREDENTIALS': None,
 }
 
-# JWT Settings cho Simple JWT (mobile app, direct API access)
+# JWT Settings for authentication (Simple JWT)
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
@@ -186,7 +185,7 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=7),
 }
 
-# REST Framework với dual authentication
+# REST Framework with JWT and OAuth2 authentication
 REST_FRAMEWORK = {
     'DEFAULT_PARSER_CLASSES': [
         'rest_framework.parsers.JSONParser',
@@ -194,9 +193,9 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.FormParser',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',  # JWT
-        'oauth2_provider.contrib.rest_framework.OAuth2Authentication',  # OAuth2
-        'rest_framework.authentication.SessionAuthentication',  # Session
+        'rest_framework_simplejwt.authentication.JWTAuthentication',  # JWT (primary)
+        'oauth2_provider.contrib.rest_framework.OAuth2Authentication',  # OAuth2 (for future use)
+        'rest_framework.authentication.SessionAuthentication',  # Session (for admin)
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',  # Mặc định cho phép tất cả
