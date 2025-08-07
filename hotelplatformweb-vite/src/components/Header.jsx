@@ -113,7 +113,7 @@ const Header = () => {
     fetchUserInfo();
   }, []);
 
-  // Polling để lấy thông báo mới mỗi 30 giây
+  // Polling để lấy thông báo mới - tối ưu hóa để giảm queries
   useEffect(() => {
     let intervalId;
 
@@ -132,9 +132,10 @@ const Header = () => {
       }
     };
 
-    if (authUtils.isAuthenticated()) {
+    // Chỉ setup polling khi user đã authenticated
+    if (authUtils.isAuthenticated() && user) {
       fetchNotifications(); // Gọi ngay lần đầu
-      intervalId = setInterval(fetchNotifications, 30000); // Polling mỗi 30 giây
+      intervalId = setInterval(fetchNotifications, 60000); // Polling mỗi 60 giây (tăng từ 30s để giảm tải)
     }
 
     return () => {
@@ -142,7 +143,7 @@ const Header = () => {
         clearInterval(intervalId); // Dọn dẹp interval khi component unmount
       }
     };
-  }, [user]);
+  }, [user?.id]); // Chỉ re-run khi user ID thay đổi, không phải toàn bộ user object
 
   const handleOpenUserMenu = (event) => {
     setAnchorElUser(event.currentTarget);
