@@ -371,10 +371,9 @@ const Rooms = () => {
                         <Button
                           variant="contained"
                           onClick={() => handleBookRoom(room)}
-                          disabled={room.status !== 'available'}
                           sx={{
-                            bgcolor: room.status === 'available' ? '#DAA520' : '#A9A9A9',
-                            '&:hover': { bgcolor: room.status === 'available' ? '#B8860B' : '#A9A9A9' },
+                            bgcolor: '#DAA520',
+                            '&:hover': { bgcolor: '#B8860B' },
                             fontFamily: 'Inter',
                           }}
                         >

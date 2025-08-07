@@ -223,7 +223,7 @@ class UserListSerializer(ModelSerializer):
         return instance
 
 # Serializer cho Booking
-class BookingSerializer(ModelSerializer):
+class BookingSerializer(serializers.ModelSerializer):
     customer_name = serializers.ReadOnlyField(source='customer.full_name')
     customer_phone = serializers.ReadOnlyField(source='customer.phone')
     customer_email = serializers.ReadOnlyField(source='customer.email')
@@ -234,8 +234,7 @@ class BookingSerializer(ModelSerializer):
         fields = [
             'id', 'customer', 'customer_name', 'customer_phone', 'customer_email',
             'rooms', 'room_details', 'check_in_date', 'check_out_date', 'total_price',
-            'guest_count', 'status', 'special_requests', 'created_at', 'updated_at'
-
+            'guest_count', 'status', 'special_requests', 'created_at', 'updated_at', 'discount_code'
         ]
         read_only_fields = ['id', 'customer_name', 'customer_phone', 'customer_email', 'created_at', 'updated_at']
         extra_kwargs = {
@@ -256,16 +255,17 @@ class BookingSerializer(ModelSerializer):
     discount_code = serializers.CharField(max_length=50, required=False, write_only=True)
 
     def validate(self, attrs):
+        # Trích xuất các thuộc tính cần thiết để xác thực
         check_in_date = attrs.get('check_in_date')
         check_out_date = attrs.get('check_out_date')
         rooms = attrs.get('rooms', [])
         guest_count = attrs.get('guest_count')
         status = attrs.get('status')
         discount_code = attrs.get('discount_code')
-        
         request = self.context.get('request')
         customer = attrs.get('customer')
 
+        # Xác thực trạng thái booking cho cập nhật và booking mới
         if self.instance:
             if self.instance.status not in ['pending', 'confirmed']:
                 raise serializers.ValidationError({
@@ -277,7 +277,7 @@ class BookingSerializer(ModelSerializer):
                     "status": "Booking mới phải có trạng thái 'pending'."
                 })
 
-        #  VALIDATION CƠ BẢN VỀ THỜI GIAN
+        # VALIDATION CƠ BẢN VỀ THỜI GIAN
         if check_in_date and check_out_date:
             if check_in_date >= check_out_date:
                 raise serializers.ValidationError({
@@ -289,104 +289,149 @@ class BookingSerializer(ModelSerializer):
                     "check_in_date": "Ngày nhận phòng không được vượt quá 28 ngày kể từ thời điểm đặt."
                 })
 
-        #  VALIDATION CONFLICT THỜI GIAN - LOGIC CHÍNH NGĂN TRÙNG BOOKING
+        # VALIDATION CONFLICT THỜI GIAN - LOGIC CHÍNH NGĂN TRÙNG BOOKING
         if rooms and check_in_date and check_out_date:
             from .models import BookingStatus
-            
+
             for room in rooms:
-                #  Kiểm tra trạng thái phòng cơ bản
-                if room.status == 'occupied':
-                    raise serializers.ValidationError(f"Phòng {room.room_number} đang được sử dụng.")
-                
-                #  KIỂM TRA CONFLICT THỜI GIAN VỚI CÁC BOOKING KHÁC
+                # Kiểm tra trạng thái phòng cơ bản
+                if room.status != 'available':
+                    raise serializers.ValidationError({
+                        "rooms": f"Phòng {room.room_number} không khả dụng (trạng thái: {room.status})."
+                    })
+
+                # KIỂM TRA CONFLICT THỜI GIAN VỚI CÁC BOOKING KHÁC
                 # Logic: Hai khoảng thời gian overlap nếu:
                 # - Booking khác bắt đầu trước khi chúng ta kết thúc: check_in_date__lt=check_out_date
                 # - Booking khác kết thúc sau khi chúng ta bắt đầu: check_out_date__gt=check_in_date
                 conflicting_bookings = room.bookings.filter(
                     status__in=[BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN],
-                    check_in_date__lt=check_out_date,    # Booking khác bắt đầu trước khi ta kết thúc
-                    check_out_date__gt=check_in_date     # Booking khác kết thúc sau khi ta bắt đầu
+                    check_in_date__lt=check_out_date,
+                    check_out_date__gt=check_in_date
                 )
-                
-                #  Loại trừ booking hiện tại nếu đang update (để không conflict với chính mình)
+                # Loại trừ booking hiện tại nếu đang update (để không conflict với chính mình)
                 if self.instance:
                     conflicting_bookings = conflicting_bookings.exclude(pk=self.instance.pk)
-                
-                #  Nếu có conflict, báo lỗi với thông tin chi tiết
+
+                # Nếu có conflict, báo lỗi với thông tin chi tiết
                 if conflicting_bookings.exists():
-                    conflict_booking = conflicting_bookings.first()
-                    raise serializers.ValidationError(
-                        f"Phòng {room.room_number} đã được đặt từ {conflict_booking.check_in_date.strftime('%d/%m/%Y %H:%M')} "
-                        f"đến {conflict_booking.check_out_date.strftime('%d/%m/%Y %H:%M')} (Booking #{conflict_booking.id})"
-                        )
-                
-                # THÔNG MINH: Sử dụng logic phân bổ khách tối ưu cho nhiều phòng
-                
+                    conflict = conflicting_bookings.first()
+                    raise serializers.ValidationError({
+                        "rooms": f"Phòng {room.room_number} đã được đặt từ {conflict.check_in_date.strftime('%d/%m/%Y %H:%M')} đến {conflict.check_out_date.strftime('%d/%m/%Y %H:%M')} (Booking #{conflict.id})"
+                    })
+
         # VALIDATION SỐ KHÁCH - Đặt sau phần conflict để có rooms và guest_count
         if rooms and guest_count:
             if len(rooms) > 1:
                 # Logic thông minh cho nhiều phòng
-                from .models import Booking
-                stay_days = (check_out_date - check_in_date).days
-                
+                stay_days = (check_out_date - check_in_date).days if check_in_date and check_out_date else 1
                 # Gọi hàm phân bổ khách thông minh
                 pricing_result = Booking.calculate_price_for_multiple_rooms(rooms, guest_count, stay_days)
-                
                 # Lưu kết quả để có thể sử dụng sau này
                 attrs['_smart_pricing_result'] = pricing_result
                 attrs['total_price'] = pricing_result['total_price']
                 
                 # Kiểm tra xem có phòng nào bị quá tải không (validation linh hoạt)
                 max_total_capacity = sum(room.room_type.max_guests for room in rooms)
-                if guest_count > max_total_capacity * 1.5:  # Cho phép 150% sức chứa tối đa
-                    raise serializers.ValidationError(
-                        f"Tổng số khách ({guest_count}) vượt quá 150% sức chứa tối đa của các phòng "
-                        f"({max_total_capacity}). Vui lòng chọn thêm phòng hoặc giảm số khách."
-                    )
+                if guest_count > max_total_capacity * 1.5:
+                    raise serializers.ValidationError({
+                        "guest_count": f"Tổng số khách ({guest_count}) vượt quá 150% sức chứa tối đa của các phòng ({max_total_capacity}). Vui lòng chọn thêm phòng hoặc giảm số khách."
+                    })
             else:
-                # Logic cũ cho phòng đơn  
+                # Logic cũ cho phòng đơn
                 room = rooms[0]
                 if guest_count > room.room_type.max_guests:
-                    raise serializers.ValidationError(f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách.")
-        
+                    raise serializers.ValidationError({
+                        "guest_count": f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách."
+                    })
+
+        # Xác thực khách hàng dựa trên vai trò người dùng
+        if request:
+            user = request.user
+            if user.role == 'customer':
+                attrs['customer'] = user
+            else:
+                if not customer:
+                    raise serializers.ValidationError({
+                        "customer": "Trường customer là bắt buộc đối với admin/owner/staff."
+                    })
+                attrs['customer'] = customer
+
+        # Tính tổng giá với mã giảm giá
+        if check_in_date and check_out_date and rooms and guest_count:
+            days = (check_out_date - check_in_date).days
+            if days <= 0:
+                days = 1
+
+            total_price = Decimal('0')
+            for room in rooms:
+                room_type = room.room_type
+                base_price = room_type.base_price
+                room_price = base_price * days
+                
+                if guest_count > room_type.max_guests:
+                    extra_guests = guest_count - room_type.max_guests
+                    surcharge = base_price * (room_type.extra_guest_surcharge / 100) * extra_guests * days
+                    room_price += surcharge
+                
+                total_price += room_price
+
+            if discount_code:
+                try:
+                    discount = DiscountCode.objects.get(code=discount_code)
+                    if discount.is_valid():
+                        discount_amount = total_price * (discount.discount_percentage / 100)
+                        total_price -= discount_amount
+                        # Cập nhật số lần sử dụng mã giảm giá
+                        discount.used_count = F('used_count') + 1
+                        discount.save(update_fields=["used_count"])
+                    else:
+                        raise serializers.ValidationError({
+                            "discount_code": "Mã giảm giá không hợp lệ hoặc đã hết hạn."
+                        })
+                except DiscountCode.DoesNotExist:
+                    raise serializers.ValidationError({
+                        "discount_code": "Mã giảm giá không tồn tại."
+                    })
+
+            attrs['total_price'] = total_price.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
         return attrs
 
     def create(self, validated_data):
+        # Trích xuất dữ liệu mã giảm giá và phòng
         discount_code = self.context['request'].data.get('discount_code')
         validated_data.pop('discount_code', None)
-        discount_applied = validated_data.pop('discount_applied', None)
+        validated_data.pop('_smart_pricing_result', None)
         rooms_data = validated_data.pop('rooms', None)
-    
+
         with transaction.atomic():
+            # Tạo booking mới
             booking = Booking.objects.create(**validated_data)
         
+            # Gán danh sách phòng nếu có
             if rooms_data is not None:
                 booking.rooms.set(rooms_data)
-        
-            if discount_applied:
-                discount_applied.used_count = F('used_count') + 1
-                discount_applied.save(update_fields=["used_count"])
-                booking.discount_applied = discount_applied
-                booking.save()
         
             return booking
 
     def update(self, instance, validated_data):
+        # Trích xuất dữ liệu cần thiết
         rooms_data = validated_data.pop('rooms', None)
         request = self.context.get('request')
         discount_code = request.data.get('discount_code') if request else None
-        discount_applied = validated_data.get('discount_applied')
-        
+        validated_data.pop('_smart_pricing_result', None)
+
+        # Kiểm tra xem các trường ảnh hưởng đến giá có thay đổi không
         fields_affecting_price = ['rooms', 'check_in_date', 'check_out_date', 'guest_count', 'discount_code']
         price_affected = any(field in validated_data for field in fields_affecting_price)
-        
+
         if price_affected:
             check_in_date = validated_data.get('check_in_date', instance.check_in_date)
             check_out_date = validated_data.get('check_out_date', instance.check_out_date)
             rooms = rooms_data if rooms_data is not None else instance.rooms.all()
             guest_count = validated_data.get('guest_count', instance.guest_count)
-            
+
             if check_in_date and check_out_date and rooms and guest_count:
                 days = (check_out_date - check_in_date).days
                 if days <= 0:
@@ -396,7 +441,6 @@ class BookingSerializer(ModelSerializer):
                 for room in rooms:
                     room_type = room.room_type
                     base_price = room_type.base_price
-                    
                     room_price = base_price * days
                     
                     if guest_count > room_type.max_guests:
@@ -405,14 +449,16 @@ class BookingSerializer(ModelSerializer):
                         room_price += surcharge
                     
                     total_price += room_price
-                
+
                 if discount_code:
                     try:
                         discount = DiscountCode.objects.get(code=discount_code)
                         if discount.is_valid():
                             discount_amount = total_price * (discount.discount_percentage / 100)
                             total_price -= discount_amount
-                            discount_applied = discount
+                            # Cập nhật số lần sử dụng mã giảm giá
+                            discount.used_count = F('used_count') + 1
+                            discount.save(update_fields=["used_count"])
                         else:
                             raise serializers.ValidationError({
                                 "discount_code": "Mã giảm giá không hợp lệ hoặc đã hết hạn."
@@ -421,20 +467,11 @@ class BookingSerializer(ModelSerializer):
                         raise serializers.ValidationError({
                             "discount_code": "Mã giảm giá không tồn tại."
                         })
-                
-                validated_data['total_price'] = total_price
-        
+
+                validated_data['total_price'] = total_price.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
         with transaction.atomic():
-            old_discount = instance.discount_applied
-            if old_discount != discount_applied:
-                if old_discount:
-                    old_discount.used_count = F('used_count') - 1
-                    old_discount.save(update_fields=["used_count"])
-                
-                if discount_applied:
-                    discount_applied.used_count = F('used_count') + 1
-                    discount_applied.save(update_fields=["used_count"])
-            
+            # Cập nhật các trường của instance
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)
             if rooms_data is not None:
