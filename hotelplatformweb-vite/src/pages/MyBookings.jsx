@@ -28,12 +28,10 @@ import {
 } from '@mui/material';
 import {
   Search as SearchIcon,
-  Close as CloseIcon,
   Hotel as HotelIcon,
   CalendarToday as CalendarIcon,
   Person as PersonIcon,
   AttachMoney as MoneyIcon,
-  Info as InfoIcon,
   Cancel as CancelIcon,
   CheckCircle as CheckCircleIcon,
   Schedule as ScheduleIcon,
@@ -67,9 +65,6 @@ const MyBookings = () => {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBooking, setSelectedBooking] = useState(null);
-  const [openModal, setOpenModal] = useState(false);
-  const [bookingDetail, setBookingDetail] = useState(null);
-  const [loadingDetail, setLoadingDetail] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [openCancelDialog, setOpenCancelDialog] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
@@ -138,31 +133,6 @@ const MyBookings = () => {
     }
   };
 
-  const fetchBookingDetail = async (bookingId) => {
-    try {
-      setLoadingDetail(true);
-      const response = await api.get(endpoints.bookings.detail(bookingId));
-      setBookingDetail(response.data);
-    } catch (err) {
-      console.error('Error fetching booking detail:', err);
-      setError('Không thể tải chi tiết đặt phòng.');
-    } finally {
-      setLoadingDetail(false);
-    }
-  };
-
-  const handleOpenModal = async (booking) => {
-    setSelectedBooking(booking);
-    setOpenModal(true);
-    await fetchBookingDetail(booking.id);
-  };
-
-  const handleCloseModal = () => {
-    setOpenModal(false);
-    setSelectedBooking(null);
-    setBookingDetail(null);
-  };
-
   const handleRefresh = () => {
     fetchBookings();
   };
@@ -180,11 +150,6 @@ const MyBookings = () => {
           ? { ...booking, status: 'cancelled' }
           : booking
       ));
-      
-      // Update booking detail if open
-      if (bookingDetail && bookingDetail.id === selectedBooking.id) {
-        setBookingDetail(prev => ({ ...prev, status: 'cancelled' }));
-      }
       
       setOpenCancelDialog(false);
       setError(null);
@@ -359,14 +324,12 @@ const MyBookings = () => {
                         height: '100%',
                         borderRadius: 3,
                         transition: 'all 0.3s ease',
-                        cursor: 'pointer',
                         '&:hover': {
-                          transform: 'translateY(-4px)',
-                          boxShadow: theme.shadows[8],
+                          transform: 'translateY(-2px)',
+                          boxShadow: theme.shadows[4],
                         },
                         border: `1px solid ${theme.palette.divider}`,
                       }}
-                      onClick={() => handleOpenModal(booking)}
                     >
                       <CardContent sx={{ p: 3 }}>
                         {/* Header with Status */}
@@ -464,16 +427,28 @@ const MyBookings = () => {
                         </Stack>
                       </CardContent>
 
-                      <CardActions sx={{ p: 2, pt: 0 }}>
-                        <Button
-                          fullWidth
-                          variant="outlined"
-                          startIcon={<InfoIcon />}
-                          sx={{ borderRadius: 2 }}
-                        >
-                          Xem Chi Tiết
-                        </Button>
-                      </CardActions>
+                      {/* Cancel Button for cancellable bookings */}
+                      {canCancelBooking(booking) && (
+                        <CardActions sx={{ p: 2, pt: 0 }}>
+                          <Button
+                            fullWidth
+                            variant="outlined"
+                            color="error"
+                            size="small"
+                            startIcon={<CancelIcon />}
+                            onClick={() => {
+                              setSelectedBooking(booking);
+                              setOpenCancelDialog(true);
+                            }}
+                            sx={{ 
+                              borderRadius: 2,
+                              fontWeight: 'bold'
+                            }}
+                          >
+                            Hủy đặt phòng
+                          </Button>
+                        </CardActions>
+                      )}
                     </Card>
                   </Grid>
                 );
@@ -481,210 +456,6 @@ const MyBookings = () => {
             </Grid>
           </>
         )}
-
-        {/* Detail Modal */}
-        <Dialog
-          open={openModal}
-          onClose={handleCloseModal}
-          maxWidth="md"
-          fullWidth
-          PaperProps={{
-            sx: { borderRadius: 3 }
-          }}
-        >
-          <DialogTitle sx={{ p: 3, bgcolor: 'primary.main', color: 'white', position: 'relative' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <HotelIcon />
-              <Box>
-                <Typography variant="h6" fontWeight="bold">
-                  Chi Tiết Đặt Phòng #{selectedBooking?.id}
-                </Typography>
-                {selectedBooking && (
-                  <Chip
-                    icon={getStatusConfig(selectedBooking.status).icon}
-                    label={statusLabels[selectedBooking.status]}
-                    size="small"
-                    sx={{
-                      bgcolor: 'rgba(255,255,255,0.2)',
-                      color: 'white',
-                      mt: 1,
-                      '& .MuiChip-icon': {
-                        color: 'white',
-                      },
-                    }}
-                  />
-                )}
-              </Box>
-            </Box>
-            <IconButton
-              onClick={handleCloseModal}
-              sx={{ position: 'absolute', right: 8, top: 8, color: 'white' }}
-            >
-              <CloseIcon />
-            </IconButton>
-          </DialogTitle>
-
-          <DialogContent sx={{ p: 0 }}>
-            {loadingDetail ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-                <CircularProgress />
-              </Box>
-            ) : bookingDetail ? (
-              <Box sx={{ p: 3 }}>
-                <Grid container spacing={3}>
-                  {/* Basic Information */}
-                  <Grid item xs={12} md={6}>
-                    <Paper elevation={1} sx={{ p: 3, borderRadius: 2 }}>
-                      <Typography variant="h6" gutterBottom color="primary.main" fontWeight="bold">
-                        Thông Tin Cơ Bản
-                      </Typography>
-                      <Stack spacing={2}>
-                        <Box>
-                          <Typography variant="subtitle2" color="text.secondary">
-                            Mã đặt phòng
-                          </Typography>
-                          <Typography variant="body1" fontWeight="500">
-                            #{bookingDetail.id}
-                          </Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="subtitle2" color="text.secondary">
-                            Ngày tạo
-                          </Typography>
-                          <Typography variant="body1">
-                            {formatDate(bookingDetail.created_at)}
-                          </Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="subtitle2" color="text.secondary">
-                            Số khách
-                          </Typography>
-                          <Typography variant="body1">
-                            {bookingDetail.guest_count} người
-                          </Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="subtitle2" color="text.secondary">
-                            Tổng tiền
-                          </Typography>
-                          <Typography variant="h6" color="primary.main" fontWeight="bold">
-                            {formatPrice(bookingDetail.total_price)}
-                          </Typography>
-                        </Box>
-                      </Stack>
-                    </Paper>
-                  </Grid>
-
-                  {/* Time Information */}
-                  <Grid item xs={12} md={6}>
-                    <Paper elevation={1} sx={{ p: 3, borderRadius: 2 }}>
-                      <Typography variant="h6" gutterBottom color="primary.main" fontWeight="bold">
-                        Thời Gian
-                      </Typography>
-                      <Stack spacing={2}>
-                        <Box>
-                          <Typography variant="subtitle2" color="text.secondary">
-                            Check-in
-                          </Typography>
-                          <Typography variant="body1" fontWeight="500">
-                            {formatDate(bookingDetail.check_in_date)}
-                          </Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="subtitle2" color="text.secondary">
-                            Check-out
-                          </Typography>
-                          <Typography variant="body1" fontWeight="500">
-                            {formatDate(bookingDetail.check_out_date)}
-                          </Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="subtitle2" color="text.secondary">
-                            Số đêm
-                          </Typography>
-                          <Typography variant="body1">
-                            {Math.ceil((new Date(bookingDetail.check_out_date) - new Date(bookingDetail.check_in_date)) / (1000 * 60 * 60 * 24))} đêm
-                          </Typography>
-                        </Box>
-                      </Stack>
-                    </Paper>
-                  </Grid>
-
-                  {/* Room Information */}
-                  {bookingDetail.room_details && bookingDetail.room_details.length > 0 && (
-                    <Grid item xs={12}>
-                      <Paper elevation={1} sx={{ p: 3, borderRadius: 2 }}>
-                        <Typography variant="h6" gutterBottom color="primary.main" fontWeight="bold">
-                          Thông Tin Phòng
-                        </Typography>
-                        <Grid container spacing={2}>
-                          {bookingDetail.room_details.map((room, index) => (
-                            <Grid item xs={12} sm={6} md={4} key={index}>
-                              <Box 
-                                sx={{ 
-                                  p: 2, 
-                                  border: '1px solid',
-                                  borderColor: 'divider',
-                                  borderRadius: 2,
-                                  bgcolor: 'background.paper'
-                                }}
-                              >
-                                <Typography variant="subtitle1" fontWeight="bold">
-                                  Phòng {room.room_number}
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                  {room.room_type_name}
-                                </Typography>
-                                <Typography variant="body2" color="primary.main" fontWeight="500">
-                                  {formatPrice(room.room_type_price)}/đêm
-                                </Typography>
-                              </Box>
-                            </Grid>
-                          ))}
-                        </Grid>
-                      </Paper>
-                    </Grid>
-                  )}
-
-                  {/* Special Requests */}
-                  {bookingDetail.special_requests && (
-                    <Grid item xs={12}>
-                      <Paper elevation={1} sx={{ p: 3, borderRadius: 2 }}>
-                        <Typography variant="h6" gutterBottom color="primary.main" fontWeight="bold">
-                          Yêu Cầu Đặc Biệt
-                        </Typography>
-                        <Typography variant="body1">
-                          {bookingDetail.special_requests}
-                        </Typography>
-                      </Paper>
-                    </Grid>
-                  )}
-                </Grid>
-              </Box>
-            ) : (
-              <Box sx={{ p: 3, textAlign: 'center' }}>
-                <Typography>Không thể tải chi tiết đặt phòng</Typography>
-              </Box>
-            )}
-          </DialogContent>
-
-          <DialogActions sx={{ p: 3, bgcolor: 'background.default' }}>
-            <Button onClick={handleCloseModal} variant="outlined">
-              Đóng
-            </Button>
-            {canCancelBooking(selectedBooking) && (
-              <Button 
-                variant="contained" 
-                color="error"
-                onClick={handleOpenCancelDialog}
-                startIcon={<CancelIcon />}
-                disabled={cancelling}
-              >
-                Hủy Đặt Phòng
-              </Button>
-            )}
-          </DialogActions>
-        </Dialog>
 
         {/* Cancel Confirmation Dialog */}
         <Dialog
