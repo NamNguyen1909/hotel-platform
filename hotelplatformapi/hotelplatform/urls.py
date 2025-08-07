@@ -4,15 +4,15 @@ from . import views
 
 # Định nghĩa router cho các ViewSet
 router = DefaultRouter()
-router.register(r'users', views.UserViewSet)
-router.register(r'room-types', views.RoomTypeViewSet)
-router.register(r'rooms', views.RoomViewSet)
-router.register(r'room-images', views.RoomImageViewSet)
-router.register(r'bookings', views.BookingViewSet)
-router.register(r'rentals', views.RoomRentalViewSet)
-router.register(r'payments', views.PaymentViewSet)
-router.register(r'discount-codes', views.DiscountCodeViewSet)
-router.register(r'notifications', views.NotificationViewSet)
+router.register(r'users', views.UserViewSet, basename='user')
+router.register(r'room-types', views.RoomTypeViewSet, basename='room-type')
+router.register(r'rooms', views.RoomViewSet, basename='room')
+router.register(r'room-images', views.RoomImageViewSet, basename='room-image')
+router.register(r'bookings', views.BookingViewSet, basename='booking')
+router.register(r'rentals', views.RoomRentalViewSet, basename='rental')
+router.register(r'payments', views.PaymentViewSet, basename='payment')
+router.register(r'discount-codes', views.DiscountCodeViewSet, basename='discount-code')
+router.register(r'notifications', views.NotificationViewSet, basename='notification')
 
 # Định nghĩa các URL patterns
 urlpatterns = [
@@ -24,6 +24,9 @@ urlpatterns = [
     
     # Manual RoomRental endpoint
     path('api/rentals/create-manual/', views.RoomRentalViewSet.as_view({'post': 'create_manual_rental'}), name='create-manual-rental'),
+    
+    # Booking calculate price endpoint
+    path('api/bookings/calculate-price/', views.BookingViewSet.as_view({'post': 'calculate_price'}), name='calculate-price'),
     
     # Stats endpoint
     path('api/stats/', views.StatsView.as_view(), name='stats'),

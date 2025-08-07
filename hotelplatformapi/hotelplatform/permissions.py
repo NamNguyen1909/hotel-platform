@@ -325,6 +325,14 @@ class CanManageStaff(permissions.BasePermission):
                 request.user.role in ['admin', 'owner'])
 
 
+class CanCreateBooking(permissions.BasePermission):
+    """
+    Quyền cho phép customer, admin, owner, staff tạo booking
+    """
+    def has_permission(self, request, view):
+        return request.user and request.user.is_authenticated and request.user.role in ['customer', 'admin', 'owner', 'staff']
+
+
 # Định nghĩa mapping role permissions cho dễ sử dụng
 ROLE_PERMISSIONS = {
     'admin': [
