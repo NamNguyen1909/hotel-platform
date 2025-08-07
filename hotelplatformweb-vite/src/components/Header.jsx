@@ -44,6 +44,7 @@ import {
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/apis';
 import authUtils from '../services/auth';
+import { useNotificationsPolling } from '../hooks/useSmartPolling';
 
 // Định nghĩa menu items theo role
 const menuItemsByRole = {
@@ -113,37 +114,27 @@ const Header = () => {
     fetchUserInfo();
   }, []);
 
-  // Polling để lấy thông báo mới - tối ưu hóa để giảm queries
-  useEffect(() => {
-    let intervalId;
-
-    const fetchNotifications = async () => {
-      if (authUtils.isAuthenticated()) {
-        try {
-          const response = await api.get('/notifications/');
-          const unreadCount = response.data.unread_count || 0;
-          setNotifications(unreadCount);
-        } catch (error) {
-          console.error('Error fetching notifications:', error);
-          setNotifications(0);
-        }
-      } else {
+  // Smart Polling với Page Visibility API - sử dụng custom hook
+  const fetchNotifications = async () => {
+    if (authUtils.isAuthenticated()) {
+      try {
+        const response = await api.get('/notifications/');
+        const unreadCount = response.data.unread_count || 0;
+        setNotifications(unreadCount);
+      } catch (error) {
+        console.error('Error fetching notifications:', error);
         setNotifications(0);
       }
-    };
-
-    // Chỉ setup polling khi user đã authenticated
-    if (authUtils.isAuthenticated() && user) {
-      fetchNotifications(); // Gọi ngay lần đầu
-      intervalId = setInterval(fetchNotifications, 60000); // Polling mỗi 60 giây (tăng từ 30s để giảm tải)
+    } else {
+      setNotifications(0);
     }
+  };
 
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId); // Dọn dẹp interval khi component unmount
-      }
-    };
-  }, [user?.id]); // Chỉ re-run khi user ID thay đổi, không phải toàn bộ user object
+  // Sử dụng custom hook cho notifications polling
+  useNotificationsPolling(
+    fetchNotifications, 
+    authUtils.isAuthenticated() && user // Chỉ enable khi user đã authenticated
+  );
 
   const handleOpenUserMenu = (event) => {
     setAnchorElUser(event.currentTarget);

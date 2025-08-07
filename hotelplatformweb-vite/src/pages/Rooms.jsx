@@ -33,6 +33,7 @@ import 'react-responsive-carousel/lib/styles/carousel.min.css';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/apis';
 import authUtils from '../services/auth';
+import { useRoomsPolling } from '../hooks/useSmartPolling';
 
 const Rooms = () => {
   const [rooms, setRooms] = useState([]);
@@ -122,6 +123,43 @@ const Rooms = () => {
     };
     fetchRooms();
   }, [searchQuery, roomTypeFilter, guestCountFilter, priceRange, currentPage, pageSize]);
+
+  // Function để refresh room status
+  const refreshRoomStatus = async () => {
+    // Chỉ refresh room status khi không đang loading
+    if (!loading) {
+      try {
+        // Refresh room data trong background để cập nhật trạng thái phòng
+        const response = await api.get('/rooms/', {
+          params: {
+            search: searchQuery,
+            room_type: roomTypeFilter,
+            max_guests: guestCountFilter,
+            price_min: priceRange[0],
+            price_max: priceRange[1],
+            page: currentPage,
+            page_size: pageSize,
+          },
+        });
+
+        const roomsData = response.data.results || [];
+        setRooms(roomsData);
+        setTotalCount(response.data.count || 0);
+        setTotalPages(Math.ceil((response.data.count || 0) / pageSize));
+        
+        console.log('🏨 Room status auto-refreshed');
+      } catch (error) {
+        console.error('Room status auto-refresh error:', error);
+        // Không hiển thị error cho auto-refresh để tránh làm phiền user
+      }
+    }
+  };
+
+  // Smart Auto-refresh Room Status với custom hook - 3 phút interval
+  const { isRunning } = useRoomsPolling(
+    refreshRoomStatus,
+    !loading // Chỉ enable khi không đang loading
+  );
 
   const handleFilter = () => {
     const params = new URLSearchParams();
