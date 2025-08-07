@@ -5,7 +5,6 @@ import {
   Box,
   CircularProgress,
   Alert,
-  Grid,
   Card,
   CardContent,
   CardActions,
@@ -313,25 +312,37 @@ const MyBookings = () => {
             </Box>
 
             {/* Bookings Grid */}
-            <Grid container spacing={3}>
+            <Box 
+              sx={{ 
+                display: 'grid',
+                gridTemplateColumns: {
+                  xs: '1fr',
+                  md: 'repeat(3, 1fr)', 
+                  lg: 'repeat(3, 1fr)'
+                },
+                gap: 3
+              }}
+            >
               {filteredBookings.map((booking) => {
                 const statusConfig = getStatusConfig(booking.status);
                 return (
-                  <Grid item xs={12} md={6} lg={4} key={booking.id}>
-                    <Card 
-                      elevation={2}
-                      sx={{ 
-                        height: '100%',
-                        borderRadius: 3,
-                        transition: 'all 0.3s ease',
-                        '&:hover': {
-                          transform: 'translateY(-2px)',
-                          boxShadow: theme.shadows[4],
-                        },
-                        border: `1px solid ${theme.palette.divider}`,
-                      }}
-                    >
-                      <CardContent sx={{ p: 3 }}>
+                  <Card 
+                    key={booking.id}
+                    elevation={2}
+                    sx={{ 
+                      height: '100%',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      borderRadius: 3,
+                      transition: 'all 0.3s ease',
+                      '&:hover': {
+                        transform: 'translateY(-2px)',
+                        boxShadow: theme.shadows[4],
+                      },
+                      border: `1px solid ${theme.palette.divider}`,
+                    }}
+                  >
+                      <CardContent sx={{ p: 3, flexGrow: 1 }}>
                         {/* Header with Status */}
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -429,7 +440,7 @@ const MyBookings = () => {
 
                       {/* Cancel Button for cancellable bookings */}
                       {canCancelBooking(booking) && (
-                        <CardActions sx={{ p: 2, pt: 0 }}>
+                        <CardActions sx={{ p: 2, pt: 0, mt: 'auto' }}>
                           <Button
                             fullWidth
                             variant="outlined"
@@ -450,10 +461,9 @@ const MyBookings = () => {
                         </CardActions>
                       )}
                     </Card>
-                  </Grid>
                 );
               })}
-            </Grid>
+            </Box>
           </>
         )}
 
