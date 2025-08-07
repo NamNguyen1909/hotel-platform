@@ -25,6 +25,7 @@ from django.db import transaction
 from django.db.models import Q, Sum, Count, Avg, F
 from django.db.models.functions import TruncMonth
 from django.shortcuts import get_object_or_404
+from django.core.exceptions import ValidationError
 
 # Local imports
 from .models import (
@@ -392,6 +393,7 @@ class RoomViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        #  AVAILABLE ROOMS LOGIC - Enhanced for booking conflicts
         try:
             check_in_date = datetime.strptime(check_in, '%Y-%m-%d')
             check_out_date = datetime.strptime(check_out, '%Y-%m-%d')
@@ -406,12 +408,19 @@ class RoomViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        #  BOOKING CONFLICT DETECTION LOGIC
+        # Tìm các phòng đã được đặt trong khoảng thời gian yêu cầu
+        # Logic: Hai khoảng thời gian overlap nếu:
+        # - Ngày bắt đầu của booking mới < ngày kết thúc của booking hiện tại
+        # - Ngày kết thúc của booking mới > ngày bắt đầu của booking hiện tại
         booked_rooms = Booking.objects.filter(
-            status__in=['pending', 'confirmed', 'checked_in'],
-            check_in_date__lt=check_out_date,
-            check_out_date__gt=check_in_date
+            status__in=['pending', 'confirmed', 'checked_in'],  # Chỉ các booking còn active
+            check_in_date__lt=check_out_date,  # Booking hiện tại bắt đầu trước khi booking mới kết thúc
+            check_out_date__gt=check_in_date   # Booking hiện tại kết thúc sau khi booking mới bắt đầu
         ).values_list('rooms__id', flat=True)
 
+        #  LỌC PHÒNG AVAILABLE
+        # Chỉ lấy phòng có status='available' và không bị conflict với booking khác
         available_rooms = Room.objects.filter(status='available').exclude(id__in=booked_rooms)
 
         if room_type:
@@ -530,10 +539,16 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         return queryset
 
     def create(self, request):
-        """Tạo booking mới"""
-        logger.info(f"Booking creation requested by user {request.user.id}")
+        """Tạo booking mới với logic tính giá thông minh"""
         serializer = BookingSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
+            # Lấy kết quả tính giá thông minh nếu có
+            smart_pricing = serializer.validated_data.get('_smart_pricing_result')
+            if smart_pricing:
+                # Log kết quả phân bổ để debug
+                logger.info(f"Smart pricing result: {smart_pricing['calculation_details']}")
+                logger.info(f"Total calculated price: {smart_pricing['total_price']}")
+            
             booking = serializer.save()
             logger.info(f"Booking {booking.id} created successfully for user {request.user.id}")
             
@@ -586,18 +601,35 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
 
     @action(detail=True, methods=['post'])
     def confirm(self, request, pk=None):
-        """Xác nhận booking (chỉ staff)"""
+        """Xác nhận booking (PENDING → CONFIRMED) - chỉ staff/admin"""
         booking = get_object_or_404(Booking, pk=pk)
         
         if booking.status != BookingStatus.PENDING:
-            return Response({"error": "Booking không ở trạng thái chờ xác nhận"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Booking không ở trạng thái chờ xác nhận"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
+        # Kiểm tra phòng còn available không
+        unavailable_rooms = []
+        for room in booking.rooms.all():
+            if room.status not in ['available', 'booked']:
+                unavailable_rooms.append(room.room_number)
+        
+        if unavailable_rooms:
+            return Response(
+                {"error": f"Phòng {', '.join(unavailable_rooms)} không còn khả dụng"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Cập nhật trạng thái
         booking.status = BookingStatus.CONFIRMED
         booking.save()
         
-        # Tự động tạo QR code thông qua signals
-        
-        return Response(BookingDetailSerializer(booking).data)
+        return Response({
+            "message": "Booking đã được xác nhận thành công",
+            "booking": BookingDetailSerializer(booking).data
+        })
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
@@ -614,19 +646,37 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
 
     @action(detail=True, methods=['post'])
     def checkin(self, request, pk=None):
-        """Check-in khách tại quầy (chỉ staff) cho đặt trước"""
-        booking = get_object_or_404(Booking, pk=pk)
+        """ CHECK-IN LOGIC - Enhanced with comprehensive validation and logging"""
+        logger.info(f"=== Starting check-in process for booking {pk} ===")
+        logger.info(f"Check-in request for booking {pk} with data: {request.data}")
+        logger.info(f"User: {request.user}, Role: {getattr(request.user, 'role', 'No role')}")
+        
+        #  BOOKING VALIDATION - Ensure booking exists and is in correct state
+        try:
+            booking = get_object_or_404(Booking, pk=pk)
+            logger.info(f"Found booking {pk}: status={booking.status}, customer={booking.customer}")
+        except Exception as e:
+            logger.error(f"Error getting booking {pk}: {e}")
+            return Response({"error": f"Booking not found: {e}"}, status=status.HTTP_404_NOT_FOUND)
 
+        #  STATUS VALIDATION - Only confirmed bookings can be checked in
         if booking.status != BookingStatus.CONFIRMED:
+            logger.warning(f"Booking {pk} status is {booking.status}, not CONFIRMED")
             return Response({"error": "Booking chưa được xác nhận hoặc đã check-in"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Validate thời gian check-in
+        #  TIME VALIDATION - Enhanced for development flexibility
         now = timezone.now()
-        if now < booking.check_in_date:
-            return Response({"error": "Chưa đến thời gian check-in dự kiến"}, status=status.HTTP_400_BAD_REQUEST)
+        logger.info(f"Current time: {now}, Booking check-in time: {booking.check_in_date}")
+        logger.info("Time validation skipped for testing purposes - Enable for production")
+        
+        # Comment để test checkin / Uncomment cho production
+        if now.date() < booking.check_in_date.date():
+            return Response({"error": "Chưa đến ngày check-in"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Kiểm tra trạng thái phòng
+        #  ROOM STATUS VALIDATION - Ensure all rooms are available for check-in
+        logger.info(f"Checking room statuses for booking {pk}")
         for room in booking.rooms.all():
+            logger.info(f"Room {room.room_number} status: {room.status}")
             if room.status not in ['booked', 'available']:
                 logger.warning(f"Phòng {room.room_number} có trạng thái không hợp lệ: {room.status}")
                 return Response(
@@ -634,24 +684,108 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-        # Lấy actual_guest_count từ request
+        # GUEST COUNT VALIDATION - Handle actual vs expected guest count
         actual_guest_count = request.data.get('actual_guest_count')
+        logger.info(f"Received actual_guest_count: {actual_guest_count} (type: {type(actual_guest_count)})")
+        
+        # VALIDATE GUEST COUNT INPUT
+        if actual_guest_count is None:
+            logger.error("Missing actual_guest_count in request data")
+            return Response({"error": "Thiếu thông tin số khách thực tế"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            actual_guest_count = int(actual_guest_count)
+            logger.info(f"Converted actual_guest_count to int: {actual_guest_count}")
+            if actual_guest_count <= 0:
+                logger.error(f"Invalid actual_guest_count: {actual_guest_count} <= 0")
+                return Response({"error": "Số khách thực tế phải lớn hơn 0"}, status=status.HTTP_400_BAD_REQUEST)
+        except (ValueError, TypeError) as e:
+            logger.error(f"Failed to convert actual_guest_count to int: {e}")
+            return Response({"error": "Số khách thực tế không hợp lệ"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Cập nhật trạng thái
+        # CAPACITY VALIDATION - Kiểm tra sức chứa phòng trước khi check-in
+        total_max_capacity = sum(room.room_type.max_guests for room in booking.rooms.all())
+        max_allowed_guests = int(total_max_capacity * 1.5)  # 150% limit
+        
+        logger.info(f"Capacity validation check:")
+        logger.info(f"  - Total room capacity: {total_max_capacity}")
+        logger.info(f"  - 150% limit (max allowed): {max_allowed_guests}")
+        logger.info(f"  - Actual guest count: {actual_guest_count}")
+        logger.info(f"  - Validation: {actual_guest_count} > {max_allowed_guests} = {actual_guest_count > max_allowed_guests}")
+        
+        if total_max_capacity > 0 and actual_guest_count > max_allowed_guests:
+            error_message = f"Không thể check-in! Số khách thực tế ({actual_guest_count}) vượt quá giới hạn 150% sức chứa phòng (tối đa: {max_allowed_guests} khách cho {total_max_capacity} sức chứa cơ bản)."
+            logger.error(f"CAPACITY VALIDATION FAILED: {error_message}")
+            return Response({
+                "error": error_message,
+                "details": {
+                    "actual_guests": actual_guest_count,
+                    "room_capacity": total_max_capacity,
+                    "max_allowed": max_allowed_guests,
+                    "exceeded_by": actual_guest_count - max_allowed_guests
+                }
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Log successful capacity validation
+        logger.info(f"✓ Capacity validation passed: {actual_guest_count} guests within limit of {max_allowed_guests}")
+
+        # Note: Guest capacity validation với phụ thu được xử lý trong models.py 
+        # - Booking.calculate_actual_price() tính phụ thu tự động
+        # - RoomRental.clean() chỉ warning, không chặn (cho phép phụ thu)
+        # - Booking.calculate_price_for_multiple_rooms() phân bổ khách thông minh
+
+        # DATABASE TRANSACTION - Atomic operation for data consistency
+        logger.info(f"Starting transaction for booking {pk}")
         with transaction.atomic():
             try:
+                # Step 1: Update booking status and guest count
+                logger.info(f"Step 1: Updating booking status to CHECKED_IN")
                 booking.status = BookingStatus.CHECKED_IN
                 if actual_guest_count:
                     booking.guest_count = actual_guest_count
-                booking.save()
+                booking.save(update_fields=['status', 'guest_count', 'updated_at'])  # Skip full clean
+                
+                logger.info(f"Booking {booking.id} updated successfully. Creating RoomRental with guest_count={booking.guest_count}")
+                
+                # Step 2: Create RoomRental record for occupancy tracking
+                logger.info(f"Step 2: Creating RoomRental")
+                
+                # TÍNH GIÁ THỰC TẾ với số khách actual - sử dụng logic có sẵn trong models
+                actual_total_price = booking.calculate_actual_price(actual_guest_count)
+                logger.info(f"Calculated actual price: {actual_total_price} (vs original: {booking.total_price})")
+                
+                room_rental = RoomRental(
+                    customer=booking.customer,
+                    booking=booking,
+                    check_in_date=now,
+                    check_out_date=booking.check_out_date,
+                    guest_count=booking.guest_count,
+                    total_price=actual_total_price  # Sử dụng giá đã tính phụ thu
+                )
+                room_rental.save(skip_validation=True)  # Skip validation during creation
+                logger.info(f"RoomRental {room_rental.id} created successfully")
+                
+                #  Step 3: Link rooms to rental for M2M relationship
+                logger.info(f"Step 3: Setting rooms for RoomRental")
+                room_rental.rooms.set(booking.rooms.all())
+                logger.info(f"Rooms set for RoomRental {room_rental.id}: {[room.room_number for room in booking.rooms.all()]}")
+                
+                # HOÀN THÀNH - Trả về response thành công
                 logger.info(f"Check-in thành công cho Booking {booking.id}, phòng: {[room.room_number for room in booking.rooms.all()]}")
                 return Response({
-                    "message": "Check-in đặt trước thành công",
-                    "booking": BookingDetailSerializer(booking).data
+                    "message": "Check-in đặt trước thành công", 
+                    "booking_id": booking.id,
+                    "rental_id": room_rental.id,
+                    "actual_guest_count": actual_guest_count,
+                    "calculated_price": str(actual_total_price),
+                    "original_price": str(booking.total_price)
                 })
             except ValidationError as e:
-                logger.error(f"Lỗi khi check-in Booking {booking.id}: {str(e)}")
+                logger.error(f"Lỗi ValidationError khi check-in Booking {booking.id}: {str(e)}")
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as e:
+                logger.error(f"Lỗi Exception khi check-in Booking {booking.id}: {str(e)}")
+                return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['post'], url_path='calculate-price')
     def calculate_price(self, request):
@@ -1561,3 +1695,144 @@ class RoomImageViewSet(viewsets.ViewSet, generics.ListAPIView, generics.Retrieve
                 {"error": "Phòng không tồn tại"},
                 status=status.HTTP_404_NOT_FOUND
             )
+
+
+# ================================ ROOM STATUS AUTO-UPDATE TASK ================================
+
+class RoomStatusUpdateTaskView(APIView):
+    """
+     AUTOMATED ROOM STATUS UPDATE TASK
+    - API endpoint được gọi bởi external schedulers (cron-job.org, Celery, etc.)
+    - Tự động cập nhật trạng thái phòng dựa trên timeline booking
+    - Xử lý no-show bookings và giải phóng phòng
+    """
+    permission_classes = [AllowAny]  #  Allow external systems to call this endpoint
+
+    def post(self, request):
+        """
+         MAIN AUTOMATION LOGIC - Process room status updates based on booking timeline
+        """
+        from django.utils import timezone
+        
+        logger.info("=== Starting room status update task ===")
+        now = timezone.now()
+        today = now.date()
+        
+        updated_rooms = []
+        errors = []
+        
+        try:
+            #  PHASE 1: Update rooms for bookings that have reached check-in date
+            # Tìm các booking đã đến ngày check-in nhưng phòng vẫn available
+            pending_bookings = Booking.objects.filter(
+                status__in=[BookingStatus.PENDING, BookingStatus.CONFIRMED],
+                check_in_date__date__lte=today  # Đến ngày check-in hoặc đã quá
+            ).prefetch_related('rooms')
+            
+            logger.info(f"Found {pending_bookings.count()} bookings ready for room status update")
+            
+            #  PROCESS EACH BOOKING - Update room status from available to booked
+            for booking in pending_bookings:
+                logger.info(f"Processing booking {booking.id}, check-in: {booking.check_in_date}")
+                
+                for room in booking.rooms.all():
+                    if room.status == 'available':
+                        try:
+                            old_status = room.status
+                            room.status = 'booked'
+                            room.save()
+                            
+                            updated_rooms.append({
+                                'room_number': room.room_number,
+                                'booking_id': booking.id,
+                                'old_status': old_status,
+                                'new_status': 'booked',
+                                'check_in_date': booking.check_in_date.isoformat()
+                            })
+                            
+                            logger.info(f"Updated room {room.room_number} from {old_status} to booked for booking {booking.id}")
+                            
+                        except Exception as e:
+                            error_msg = f"Failed to update room {room.room_number} for booking {booking.id}: {str(e)}"
+                            errors.append(error_msg)
+                            logger.error(error_msg)
+                    else:
+                        logger.info(f"Room {room.room_number} status is {room.status}, no update needed")
+            
+            #  PHASE 2: Handle NO-SHOW bookings (quá hạn check-in)
+            # Tìm các booking quá hạn check-in và cần giải phóng phòng
+            overdue_bookings = Booking.objects.filter(
+                status__in=[BookingStatus.PENDING, BookingStatus.CONFIRMED],
+                check_in_date__lt=now - timedelta(hours=6)  # Quá 6 tiếng sau thời gian check-in
+            ).prefetch_related('rooms')
+            
+            logger.info(f"Found {overdue_bookings.count()} overdue bookings for no-show processing")
+            
+            for booking in overdue_bookings:
+                logger.info(f"Processing overdue booking {booking.id}, check-in was: {booking.check_in_date}")
+                
+                # Chuyển booking thành NO_SHOW
+                booking.status = BookingStatus.NO_SHOW
+                booking.save()
+                
+                # Giải phóng phòng
+                for room in booking.rooms.all():
+                    if room.status in ['booked', 'available']:
+                        old_status = room.status
+                        room.status = 'available'
+                        room.save()
+                        
+                        updated_rooms.append({
+                            'room_number': room.room_number,
+                            'booking_id': booking.id,
+                            'old_status': old_status,
+                            'new_status': 'available',
+                            'reason': 'no_show',
+                            'check_in_date': booking.check_in_date.isoformat()
+                        })
+                        
+                        logger.info(f"Released room {room.room_number} due to no-show booking {booking.id}")
+                
+                # Tạo thông báo no-show
+                try:
+                    Notification.objects.create(
+                        user=booking.customer,
+                        notification_type='booking_confirmation',
+                        title='Booking đã bị hủy - No Show',
+                        message=f'Booking {booking.id} đã bị hủy do không check-in đúng thời gian.'
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to create no-show notification for booking {booking.id}: {str(e)}")
+            
+            result = {
+                'success': True,
+                'message': f'Room status update completed successfully',
+                'timestamp': now.isoformat(),
+                'summary': {
+                    'total_rooms_updated': len(updated_rooms),
+                    'bookings_processed': pending_bookings.count(),
+                    'no_show_bookings': overdue_bookings.count(),
+                    'errors_count': len(errors)
+                },
+                'updated_rooms': updated_rooms
+            }
+            
+            if errors:
+                result['errors'] = errors
+                result['success'] = False
+                
+            logger.info(f"Room status update task completed: {result['summary']}")
+            
+            return Response(result, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            error_result = {
+                'success': False,
+                'message': f'Room status update failed: {str(e)}',
+                'timestamp': now.isoformat(),
+                'updated_rooms': updated_rooms,
+                'errors': errors + [str(e)]
+            }
+            
+            logger.error(f"Room status update task failed: {str(e)}")
+            return Response(error_result, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

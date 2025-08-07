@@ -14,6 +14,9 @@ class Command(BaseCommand):
     help = 'Seed database with dummy data for development'
 
     def handle(self, *args, **kwargs):
+        # Flush database trước khi tạo data mới
+        self.flush_database()
+
         self.stdout.write(self.style.SUCCESS('Seeding data...'))
         self.create_users()
         self.create_room_types()
@@ -25,6 +28,47 @@ class Command(BaseCommand):
         self.create_notifications()
         self.update_customer_stats()  # Cập nhật thống kê khách hàng sau khi seed xong
         self.stdout.write(self.style.SUCCESS('Done! Created comprehensive sample data.'))
+
+    def flush_database(self):
+        """Xóa tất cả dữ liệu trong database trước khi seed"""
+        self.stdout.write(self.style.WARNING('Flushing database...'))
+        
+        # Xóa theo thứ tự để tránh foreign key constraints
+        # Xóa các bảng có foreign key trước
+        Payment.objects.all().delete()
+        self.stdout.write('✓ Deleted all Payments')
+        
+        RoomRental.objects.all().delete()
+        self.stdout.write('✓ Deleted all RoomRentals')
+        
+        Notification.objects.all().delete()
+        self.stdout.write('✓ Deleted all Notifications')
+        
+        # Xóa booking (có M2M với rooms)
+        Booking.objects.all().delete()
+        self.stdout.write('✓ Deleted all Bookings')
+        
+        # Xóa discount codes
+        DiscountCode.objects.all().delete()
+        self.stdout.write('✓ Deleted all DiscountCodes')
+        
+        # Xóa room images
+        RoomImage.objects.all().delete()
+        self.stdout.write('✓ Deleted all RoomImages')
+        
+        # Xóa rooms
+        Room.objects.all().delete()
+        self.stdout.write('✓ Deleted all Rooms')
+        
+        # Xóa room types
+        RoomType.objects.all().delete()
+        self.stdout.write('✓ Deleted all RoomTypes')
+        
+        # Xóa tất cả users bao gồm superusers (để tạo data mới hoàn toàn)
+        UserModel.objects.all().delete()
+        self.stdout.write('✓ Deleted all Users (including superusers)')
+        
+        self.stdout.write(self.style.SUCCESS('Database flushed successfully!\n'))
 
     def create_users(self):
         # Admin (sử dụng signal tự động tạo)
@@ -171,7 +215,7 @@ class Command(BaseCommand):
             month_end = month_start + timedelta(days=30)
             
             # Số booking mỗi tháng (15-25 booking)
-            num_bookings = random.randint(15, 25)
+            num_bookings = random.randint(5, 10)
             
             for _ in range(num_bookings):
                 customer = random.choice(customers)
@@ -216,6 +260,7 @@ class Command(BaseCommand):
                 rental = RoomRental.objects.create(
                     booking=booking,
                     customer=customer,
+                    check_in_date=check_in,
                     check_out_date=check_out,
                     total_price=total_price,
                     guest_count=guest_count,
@@ -338,6 +383,7 @@ class Command(BaseCommand):
             rental = RoomRental.objects.create(
                 booking=booking,
                 customer=customer,
+                check_in_date=check_in,
                 check_out_date=check_out,
                 total_price=total_price,
                 guest_count=booking.guest_count,
@@ -418,7 +464,8 @@ class Command(BaseCommand):
 
 # Mỗi lần chạy seed hiện tại sẽ:
 
-# Giữ nguyên Users, Rooms, RoomTypes cũ IDEMPOTENT
-# Tạo thêm Bookings, Payments, Notifications mới NON-IDEMPOTENT
-# Room status được cập nhật theo booking mới nhất
+# FLUSH toàn bộ database trước khi tạo data mới (trừ superusers)
+# Tạo lại tất cả dữ liệu từ đầu với data mới
+# Room status được cập nhật theo booking mới tạo
 # Customer stats được recalculate
+# Đảm bảo data sạch và nhất quán

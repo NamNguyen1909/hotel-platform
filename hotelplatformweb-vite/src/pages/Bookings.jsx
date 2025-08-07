@@ -72,6 +72,11 @@ const Bookings = () => {
     title: '',
     message: '',
   });
+  const [checkinDialog, setCheckinDialog] = useState({
+    open: false,
+    booking: null,
+    actualGuestCount: 0,
+  });
 
   // Fetch bookings từ API
   useEffect(() => {
@@ -188,8 +193,22 @@ const Bookings = () => {
     setDialog({ open: false, action: null, bookingId: null, title: '', message: '' });
   };
 
-  // Xử lý check-in
-  const handleCheckIn = async (bookingId) => {
+  // Mở modal check-in
+  const openCheckinDialog = (booking) => {
+    setCheckinDialog({
+      open: true,
+      booking: booking,
+      actualGuestCount: booking.guest_count, // Mặc định bằng số khách đã đặt
+    });
+  };
+
+  // Đóng modal check-in
+  const closeCheckinDialog = () => {
+    setCheckinDialog({ open: false, booking: null, actualGuestCount: 0 });
+  };
+
+  // Xử lý check-in với actual guest count
+  const handleCheckIn = async (bookingId, actualGuestCount) => {
     try {
       const booking = bookings.find((b) => b.id === bookingId);
       if (!booking) {
@@ -203,9 +222,9 @@ const Bookings = () => {
         return;
       }
 
-      // Kiểm tra guest_count
-      if (!Number.isInteger(booking.guest_count) || booking.guest_count <= 0) {
-        setError('Số khách không hợp lệ.');
+      // Kiểm tra actualGuestCount
+      if (!Number.isInteger(actualGuestCount) || actualGuestCount <= 0) {
+        setError('Số khách thực tế không hợp lệ.');
         return;
       }
 
@@ -221,21 +240,22 @@ const Bookings = () => {
 
       console.log('Sending check-in request:', {
         bookingId,
-        actual_guest_count: booking.guest_count,
+        actual_guest_count: actualGuestCount,
       });
 
       const response = await api.post(endpoints.bookings.checkin(bookingId), {
-        actual_guest_count: booking.guest_count,
+        actual_guest_count: actualGuestCount,
       });
 
       setBookings((prev) =>
         prev.map((booking) =>
           booking.id === bookingId
-            ? { ...booking, status: 'checked_in', rentals: [response.data] }
+            ? { ...booking, status: 'checked_in', guest_count: actualGuestCount }
             : booking
         )
       );
       setError(null);
+      closeCheckinDialog(); // Đóng modal sau khi thành công
     } catch (err) {
       console.error('Check-in error:', {
         status: err.response?.status,
@@ -288,14 +308,30 @@ const Bookings = () => {
     }
   };
 
+  // Xử lý xác nhận booking (PENDING → CONFIRMED)
+  const handleConfirm = async (bookingId) => {
+    try {
+      await api.post(endpoints.bookings.confirm(bookingId));
+      setBookings((prev) =>
+        prev.map((booking) =>
+          booking.id === bookingId ? { ...booking, status: 'confirmed' } : booking
+        )
+      );
+      setError(null);
+    } catch (err) {
+      setError(`Không thể xác nhận booking: ${err.response?.data?.error || err.message}`);
+    }
+  };
+
   // Xử lý xác nhận hành động từ dialog
   const handleConfirmAction = async () => {
-    if (dialog.action === 'checkin') {
-      await handleCheckIn(dialog.bookingId);
-    } else if (dialog.action === 'checkout') {
+    // Checkin sẽ được xử lý riêng trong modal checkin
+    if (dialog.action === 'checkout') {
       await handleCheckOut(dialog.bookingId);
     } else if (dialog.action === 'cancel') {
       await handleCancel(dialog.bookingId);
+    } else if (dialog.action === 'confirm') {
+      await handleConfirm(dialog.bookingId);
     }
     closeDialog();
   };
@@ -367,18 +403,28 @@ const Bookings = () => {
       width: 200,
       renderCell: (params) => (
         <Stack direction="row" spacing={1}>
+          {params.row.status === 'pending' && (
+            <Tooltip title="Xác nhận">
+              <IconButton
+                color="primary"
+                onClick={() =>
+                  openConfirmationDialog(
+                    'confirm',
+                    params.row.id,
+                    'Xác nhận Booking',
+                    `Xác nhận booking ID ${params.row.id}?`
+                  )
+                }
+              >
+                <CheckCircle />
+              </IconButton>
+            </Tooltip>
+          )}
           {params.row.status === 'confirmed' && (
             <Tooltip title="Check-in">
               <IconButton
                 color="success"
-                onClick={() =>
-                  openConfirmationDialog(
-                    'checkin',
-                    params.row.id,
-                    'Xác nhận Check-in',
-                    `Xác nhận check-in cho booking ID ${params.row.id}?`
-                  )
-                }
+                onClick={() => openCheckinDialog(params.row)}
               >
                 <CheckCircle />
               </IconButton>
@@ -499,6 +545,54 @@ const Bookings = () => {
           />
         )}
       </Paper>
+
+      {/* Modal Check-in */}
+      <Dialog open={checkinDialog.open} onClose={closeCheckinDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>Check-in Booking</DialogTitle>
+        <DialogContent>
+          {checkinDialog.booking && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body1" gutterBottom>
+                <strong>Booking ID:</strong> {checkinDialog.booking.id}
+              </Typography>
+              <Typography variant="body1" gutterBottom>
+                <strong>Khách hàng:</strong> {checkinDialog.booking.customer_name}
+              </Typography>
+              <Typography variant="body1" gutterBottom>
+                <strong>Phòng:</strong> {checkinDialog.booking.room_numbers}
+              </Typography>
+              <Typography variant="body1" gutterBottom>
+                <strong>Số khách đã đặt:</strong> {checkinDialog.booking.guest_count}
+              </Typography>
+              
+              <TextField
+                label="Số khách thực tế"
+                type="number"
+                value={checkinDialog.actualGuestCount}
+                onChange={(e) => setCheckinDialog(prev => ({
+                  ...prev,
+                  actualGuestCount: parseInt(e.target.value) || 0
+                }))}
+                fullWidth
+                margin="normal"
+                inputProps={{ min: 1 }}
+                helperText="Nhập số khách thực tế check-in"
+              />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeCheckinDialog}>Hủy</Button>
+          <Button 
+            onClick={() => handleCheckIn(checkinDialog.booking?.id, checkinDialog.actualGuestCount)}
+            color="primary" 
+            variant="contained"
+            disabled={!checkinDialog.actualGuestCount || checkinDialog.actualGuestCount <= 0}
+          >
+            Xác nhận Check-in
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Dialog xác nhận hành động */}
       <Dialog open={dialog.open} onClose={closeDialog}>
