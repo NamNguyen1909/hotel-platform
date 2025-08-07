@@ -75,6 +75,16 @@ def booking_post_save(sender, instance, created, **kwargs):
             title='Đặt phòng thành công',
             message=f'Đặt phòng của bạn đã được tạo thành công. Mã booking: {instance.id}'
         )
+        
+        # CÂP NHẬT TOTAL BOOKINGS VÀ CUSTOMER TYPE CHO USER
+        # Cập nhật tự động số lần booking và loại khách hàng khi tạo booking mới
+        if instance.customer and instance.customer.role == 'customer':
+            try:
+                # Gọi method refresh_customer_stats để cập nhật toàn bộ thống kê customer
+                instance.customer.refresh_customer_stats()
+                print(f"✅ Updated customer stats for {instance.customer.full_name}: total_bookings={instance.customer.total_bookings}, customer_type={instance.customer.customer_type}")
+            except Exception as e:
+                print(f"❌ Error updating customer stats for booking {instance.id}: {e}")
     
     # Tạo thông báo khi booking được xác nhận
     if instance.status == BookingStatus.CONFIRMED:
@@ -96,6 +106,16 @@ def booking_post_save(sender, instance, created, **kwargs):
                 return
                 
             print(f"Booking {instance.id} status changed: {old_status} → {instance.status}")
+            
+            # CÂP NHẬT CUSTOMER STATS KHI BOOKING STATUS THAY ĐỔI
+            # Cập nhật lại thống kê customer khi có thay đổi status quan trọng
+            if old_status != instance.status and instance.customer and instance.customer.role == 'customer':
+                try:
+                    # Cập nhật customer stats (total_bookings, total_spent, customer_type)
+                    instance.customer.refresh_customer_stats()
+                    print(f"✅ Updated customer stats after status change for {instance.customer.full_name}: {old_status} → {instance.status}")
+                except Exception as e:
+                    print(f"❌ Error updating customer stats for booking {instance.id} status change: {e}")
             
             # LOGIC CHÍNH: Cập nhật room status khi booking status thay đổi
             if old_status != instance.status:
@@ -179,7 +199,7 @@ def booking_rooms_changed(sender, instance, action, **kwargs):
             
             # CẬP NHẬT CUSTOMER STATS: Sau khi thêm rooms vào booking
             if instance.customer and instance.customer.role == 'customer':
-                instance.customer.update_customer_type()
+                instance.customer.refresh_customer_stats()
                 print(f"Customer {instance.customer.username} stats updated")
 
         except Exception as e:
@@ -206,7 +226,7 @@ def room_rental_post_save(sender, instance, created, **kwargs):
     Signal xử lý sau khi RoomRental được lưu
     """
     if instance.customer and instance.customer.role == 'customer':
-        instance.customer.update_customer_type()
+        instance.customer.refresh_customer_stats()
 
 
 @receiver(post_save, sender=Payment)  
@@ -215,7 +235,7 @@ def payment_post_save(sender, instance, created, **kwargs):
     Signal xử lý sau khi Payment được lưu
     """
     if instance.customer and instance.customer.role == 'customer':
-        instance.customer.update_customer_type()
+        instance.customer.refresh_customer_stats()
         
     # Tạo thông báo khi thanh toán thành công
     if created and instance.status:

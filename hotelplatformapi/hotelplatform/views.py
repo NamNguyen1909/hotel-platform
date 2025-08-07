@@ -165,7 +165,11 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
         """
         Lấy thông tin profile của user hiện tại
         """
-        serializer = UserDetailSerializer(request.user)
+        user = request.user
+        # Refresh customer stats trước khi trả về để đảm bảo dữ liệu mới nhất
+        if user.role == 'customer':
+            user.refresh_customer_stats()
+        serializer = UserDetailSerializer(user)
         return Response(serializer.data)
 
     @action(detail=False, methods=['put'])
@@ -176,6 +180,9 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
         serializer = UserSerializer(request.user, data=request.data, partial=True)
         if serializer.is_valid():
             user = serializer.save()
+            # Refresh customer stats để đảm bảo dữ liệu mới nhất
+            if user.role == 'customer':
+                user.refresh_customer_stats()
             return Response(UserDetailSerializer(user).data)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -913,6 +920,38 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
                 {"error": str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+    @action(detail=False, methods=['get'], url_path='my-bookings')
+    def my_bookings(self, request):
+        """
+        Lấy danh sách booking của user hiện tại
+        Chỉ dành cho customer
+        """
+        if not request.user.is_authenticated:
+            return Response(
+                {"error": "Bạn cần đăng nhập để xem đặt phòng"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        if request.user.role != 'customer':
+            return Response(
+                {"error": "Chỉ khách hàng mới có thể xem đặt phòng của mình"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Filter bookings for current user
+        queryset = Booking.objects.filter(
+            customer=request.user
+        ).select_related('customer').prefetch_related('rooms').order_by('-created_at')
+        
+        # Apply pagination
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = BookingSerializer(page, many=True, context={'request': request})
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = BookingSerializer(queryset, many=True, context={'request': request})
+        return Response(serializer.data)
 
 class RoomRentalViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
     """

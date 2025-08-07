@@ -159,7 +159,7 @@ class UserAdmin(admin.ModelAdmin):
         """Action để cập nhật thống kê khách hàng"""
         updated_count = 0
         for user in queryset.filter(role='customer'):
-            user.update_customer_type()
+            user.refresh_customer_stats()
             updated_count += 1
         
         self.message_user(

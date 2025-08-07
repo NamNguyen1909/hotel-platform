@@ -432,7 +432,7 @@ class Command(BaseCommand):
         self.stdout.write('Updating customer statistics...')
         customers = UserModel.objects.filter(role='customer')
         for customer in customers:
-            customer.update_customer_type()
+            customer.refresh_customer_stats()
         self.stdout.write(f'Updated stats for {customers.count()} customers.')
         
         # Hiển thị phân phối trạng thái phòng

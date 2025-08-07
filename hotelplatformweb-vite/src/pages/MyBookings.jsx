@@ -78,6 +78,8 @@ const MyBookings = () => {
   const theme = useTheme();
 
   useEffect(() => {
+    console.log('MyBookings component mounted');
+    console.log('Auth token exists:', !!localStorage.getItem('access_token'));
     fetchBookings();
   }, []);
 
@@ -102,12 +104,34 @@ const MyBookings = () => {
   const fetchBookings = async () => {
     try {
       setLoading(true);
-      const response = await api.get(endpoints.bookings.list);
-      setBookings(response.data);
+      console.log('Fetching bookings for user...');
+      const response = await api.get(endpoints.bookings.myBookings);
+      console.log('Bookings response:', response.data);
+      
+      // Handle paginated response
+      if (response.data.results) {
+        console.log('Found paginated response with', response.data.results.length, 'bookings');
+        setBookings(response.data.results);
+      } else if (Array.isArray(response.data)) {
+        console.log('Found direct array with', response.data.length, 'bookings');
+        setBookings(response.data);
+      } else {
+        console.log('Unexpected response format:', response.data);
+        setBookings([]);
+      }
       setError(null);
     } catch (err) {
       console.error('Error fetching bookings:', err);
-      setError('Không thể tải danh sách đặt phòng. Vui lòng thử lại sau.');
+      console.error('Error response:', err.response?.data);
+      
+      // Handle specific error cases
+      if (err.response?.status === 401) {
+        setError('Bạn cần đăng nhập để xem đặt phòng của mình.');
+      } else if (err.response?.status === 403) {
+        setError('Bạn không có quyền xem thông tin này.');
+      } else {
+        setError('Không thể tải danh sách đặt phòng. Vui lòng thử lại sau.');
+      }
       setBookings([]);
     } finally {
       setLoading(false);

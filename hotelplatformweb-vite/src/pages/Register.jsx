@@ -70,8 +70,8 @@ const Register = () => {
     }
 
     // Validate password length
-    if (formData.password.length < 6) {
-      setError('Mật khẩu phải có ít nhất 6 ký tự');
+    if (formData.password.length < 8) {
+      setError('Mật khẩu phải có ít nhất 8 ký tự');
       return false;
     }
 
@@ -146,19 +146,88 @@ const Register = () => {
       
     } catch (err) {
       console.error('Register error:', err);
+      console.error('Error response data:', err.response?.data);
       if (err.response?.data) {
         const errorData = err.response.data;
+        
+        // Handle detailed field validation errors
+        const fieldErrors = [];
+        
+        // Check for specific field errors
         if (errorData.username) {
-          setError('Tên đăng nhập đã tồn tại');
-        } else if (errorData.email) {
-          setError('Email đã được sử dụng');
-        } else if (errorData.detail) {
-          setError(errorData.detail);
+          if (Array.isArray(errorData.username)) {
+            fieldErrors.push(`Tên đăng nhập: ${errorData.username[0]}`);
+          } else {
+            fieldErrors.push('Tên đăng nhập đã tồn tại');
+          }
+        }
+        
+        if (errorData.email) {
+          if (Array.isArray(errorData.email)) {
+            fieldErrors.push(`Email: ${errorData.email[0]}`);
+          } else {
+            fieldErrors.push('Email đã được sử dụng');
+          }
+        }
+        
+        if (errorData.password) {
+          if (Array.isArray(errorData.password)) {
+            fieldErrors.push(`Mật khẩu: ${errorData.password[0]}`);
+          } else {
+            fieldErrors.push(`Mật khẩu: ${errorData.password}`);
+          }
+        }
+        
+        if (errorData.full_name) {
+          if (Array.isArray(errorData.full_name)) {
+            fieldErrors.push(`Họ tên: ${errorData.full_name[0]}`);
+          } else {
+            fieldErrors.push(`Họ tên: ${errorData.full_name}`);
+          }
+        }
+        
+        if (errorData.phone) {
+          if (Array.isArray(errorData.phone)) {
+            fieldErrors.push(`Số điện thoại: ${errorData.phone[0]}`);
+          } else {
+            fieldErrors.push(`Số điện thoại: ${errorData.phone}`);
+          }
+        }
+        
+        if (errorData.id_card) {
+          if (Array.isArray(errorData.id_card)) {
+            fieldErrors.push(`CMND/CCCD: ${errorData.id_card[0]}`);
+          } else {
+            fieldErrors.push(`CMND/CCCD: ${errorData.id_card}`);
+          }
+        }
+        
+        // Handle non-field errors
+        if (errorData.non_field_errors) {
+          if (Array.isArray(errorData.non_field_errors)) {
+            fieldErrors.push(...errorData.non_field_errors);
+          } else {
+            fieldErrors.push(errorData.non_field_errors);
+          }
+        }
+        
+        // Handle detail error (general error message)
+        if (errorData.detail && fieldErrors.length === 0) {
+          fieldErrors.push(errorData.detail);
+        }
+        
+        // Set the first error or join multiple errors
+        if (fieldErrors.length > 0) {
+          if (fieldErrors.length === 1) {
+            setError(fieldErrors[0]);
+          } else {
+            setError(fieldErrors.join('\n'));
+          }
         } else {
           setError('Đã xảy ra lỗi khi đăng ký. Vui lòng thử lại.');
         }
       } else {
-        setError('Đã xảy ra lỗi. Vui lòng thử lại sau.');
+        setError('Đã xảy ra lỗi kết nối. Vui lòng thử lại sau.');
       }
     } finally {
       setLoading(false);
@@ -215,7 +284,9 @@ const Register = () => {
 
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
+              {error.split('\n').map((line, index) => (
+                <div key={index}>{line}</div>
+              ))}
             </Alert>
           )}
 
@@ -285,7 +356,7 @@ const Register = () => {
               value={formData.password}
               onChange={handleChange}
               disabled={loading}
-              placeholder="Nhập mật khẩu (ít nhất 6 ký tự)"
+              placeholder="Nhập mật khẩu (ít nhất 8 ký tự)"
               InputProps={{
                 endAdornment: (
                   <InputAdornment position="end">
