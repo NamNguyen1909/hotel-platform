@@ -166,9 +166,6 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
         Lấy thông tin profile của user hiện tại
         """
         user = request.user
-        # Refresh customer stats trước khi trả về để đảm bảo dữ liệu mới nhất
-        if user.role == 'customer':
-            user.refresh_customer_stats()
         serializer = UserDetailSerializer(user)
         return Response(serializer.data)
 
@@ -180,9 +177,6 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
         serializer = UserSerializer(request.user, data=request.data, partial=True)
         if serializer.is_valid():
             user = serializer.save()
-            # Refresh customer stats để đảm bảo dữ liệu mới nhất
-            if user.role == 'customer':
-                user.refresh_customer_stats()
             return Response(UserDetailSerializer(user).data)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

@@ -165,7 +165,6 @@ class UserSerializer(ModelSerializer):
             instance.avatar = avatar
 
         instance.save()
-        instance.refresh_customer_stats()
         return instance
 
 # Serializer cho danh sách User với thống kê
@@ -219,7 +218,6 @@ class UserListSerializer(ModelSerializer):
             instance.avatar = avatar
 
         instance.save()
-        instance.refresh_customer_stats()
         return instance
 
 # Serializer cho Booking
