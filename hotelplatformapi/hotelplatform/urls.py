@@ -13,6 +13,7 @@ router.register(r'rentals', views.RoomRentalViewSet, basename='rental')
 router.register(r'payments', views.PaymentViewSet, basename='payment')
 router.register(r'discount-codes', views.DiscountCodeViewSet, basename='discount-code')
 router.register(r'notifications', views.NotificationViewSet, basename='notification')
+router.register(r'invoices', views.InvoiceViewSet, basename='invoice')
 
 # Định nghĩa các URL patterns
 urlpatterns = [

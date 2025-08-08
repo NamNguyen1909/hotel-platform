@@ -1,19 +1,11 @@
-// InvoiceDetail.jsx
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Container,
-  Box,
-  Typography,
-  Button,
-  CircularProgress,
-  Alert,
-  Paper,
-  Grid,
+  Container, Box, Typography, Card, CardContent, Grid, Chip, Button, Alert, Skeleton
 } from '@mui/material';
-import { QRCodeCanvas } from 'qrcode.react'; // Use named import
+import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import api from '../services/apis';
-import authUtils from '../services/auth';
+import { endpoints } from '../services/apis';
 
 const InvoiceDetail = () => {
   const { id } = useParams();
@@ -21,173 +13,105 @@ const InvoiceDetail = () => {
   const [invoice, setInvoice] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null); // Add success state
-  const [paymentUrl, setPaymentUrl] = useState(null);
 
-  // Kiểm tra quyền nhân viên
   useEffect(() => {
-    const checkPermission = async () => {
-      const user = await authUtils.getCurrentUser();
-      if (!['staff', 'admin', 'owner'].includes(user?.role)) {
-        setError('Bạn không có quyền xem hóa đơn.');
-        navigate('/');
-      }
-    };
-    if (authUtils.isAuthenticated()) {
-      checkPermission();
-    } else {
-      navigate('/login');
-    }
-  }, [navigate]);
-
-  // Lấy chi tiết hóa đơn
-  useEffect(() => {
-    const fetchInvoice = async () => {
+    (async () => {
+      setLoading(true);
       try {
-        const response = await api.get(`/payments/${id}/`);
-        setInvoice(response.data);
-        setLoading(false);
-      } catch (err) {
-        setError('Không thể tải chi tiết hóa đơn.');
+        const res = await api.get(endpoints.invoices.detail(id));
+        setInvoice(res.data);
+        setError(null);
+      } catch {
+        setError('Không thể tải chi tiết hóa đơn. Vui lòng thử lại.');
+      } finally {
         setLoading(false);
       }
-    };
-    fetchInvoice();
+    })();
   }, [id]);
 
-  // Tạo URL thanh toán VNPay
-  const handleGeneratePaymentUrl = async () => {
-    try {
-      const response = await api.get(`/vnpay/create-payment/?amount=${invoice.amount}`);
-      setPaymentUrl(response.data.payment_url);
-    } catch (err) {
-      setError('Không thể tạo mã QR thanh toán.');
-    }
-  };
-
-  // In hóa đơn
-  const handlePrint = () => {
-    window.print();
-  };
-
-  // Xử lý callback từ VNPay
-  useEffect(() => {
-    const handleMessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.vnp_ResponseCode === '00') {
-          setSuccess('Thanh toán thành công!');
-          setInvoice((prev) => ({ ...prev, status: true, paid_at: new Date() }));
-        } else {
-          setError(data.message || 'Thanh toán thất bại.');
-        }
-      } catch (err) {
-        console.error('Error parsing VNPay response:', err);
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
-
   if (loading) {
-    return <CircularProgress sx={{ display: 'block', mx: 'auto', mt: 4 }} />;
+    return (
+      <Container maxWidth="lg" sx={{ py: 8 }}>
+        <Skeleton variant="rectangular" height={400} sx={{ borderRadius: 2 }} />
+      </Container>
+    );
   }
 
   if (error) {
-    return <Alert severity="error" sx={{ m: 4 }}>{error}</Alert>;
+    return (
+      <Container maxWidth="lg" sx={{ py: 8 }}>
+        <Alert severity="error">{error}</Alert>
+      </Container>
+    );
   }
 
   if (!invoice) {
-    return <Typography sx={{ m: 4 }}>Không tìm thấy hóa đơn.</Typography>;
+    return (
+      <Container maxWidth="lg" sx={{ py: 8 }}>
+        <Alert severity="info">Không tìm thấy hóa đơn.</Alert>
+      </Container>
+    );
   }
 
   return (
-    <Container maxWidth="md" sx={{ py: 4 }}>
-      <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold', color: '#8B4513' }}>
-        Hóa Đơn #{invoice.id}
-      </Typography>
-
-      {success && <Alert severity="success" sx={{ m: 4 }}>{success}</Alert>}
-      {error && <Alert severity="error" sx={{ m: 4 }}>{error}</Alert>}
-
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Grid container spacing={2}>
-          <Grid item xs={12} sm={6}>
-            <Typography variant="body1">
-              <strong>Khách hàng:</strong> {invoice.customer_detail?.full_name || 'N/A'}
+    <Box sx={{ py: 8, backgroundColor: 'grey.100', minHeight: '100vh' }}>
+      <Container maxWidth="lg">
+        <Typography variant="h4" align="center" sx={{ mb: 4 }}>
+          Chi tiết Hóa Đơn #{invoice.id}
+        </Typography>
+        <Card sx={{ borderRadius: 2 }}>
+          <CardContent>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+              <ReceiptLongIcon fontSize="large" color="primary" sx={{ mr: 1 }} />
+              <Typography variant="h6">Hóa đơn #{invoice.id}</Typography>
+              <Chip
+                label={invoice.status ? 'Đã thanh toán' : 'Chưa thanh toán'}
+                color={invoice.status ? 'success' : 'warning'}
+                size="small"
+                sx={{ ml: 'auto' }}
+              />
+            </Box>
+            <Typography variant="body1" sx={{ mb: 1 }}>
+              Khách hàng: <strong>{invoice.customer_name || 'N/A'}</strong>
             </Typography>
-            <Typography variant="body1">
-              <strong>Email:</strong> {invoice.customer_detail?.email || 'N/A'}
+            <Typography variant="body1" sx={{ mb: 1 }}>
+              Ngày nhận phòng: <strong>{invoice.check_in_date ? new Date(invoice.check_in_date).toLocaleDateString('vi-VN') : 'N/A'}</strong>
             </Typography>
-            <Typography variant="body1">
-              <strong>Số điện thoại:</strong> {invoice.customer_detail?.phone || 'N/A'}
+            <Typography variant="body1" sx={{ mb: 2 }}>
+              Ngày trả phòng: <strong>{invoice.check_out_date ? new Date(invoice.check_out_date).toLocaleDateString('vi-VN') : 'N/A'}</strong>
             </Typography>
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <Typography variant="body1">
-              <strong>Số tiền:</strong> {parseFloat(invoice.amount).toLocaleString('vi-VN')} VND
+            <Typography variant="h6" sx={{ mb: 2 }}>Chi tiết khoản phí</Typography>
+            <Grid container spacing={2}>
+              {(invoice.items || []).map(item => (
+                <Grid item xs={12} key={item.room_id}>
+                  <Card variant="outlined" sx={{ p: 2 }}>
+                    <Typography variant="body2">Phòng: <strong>{item.room_type || 'N/A'}</strong></Typography>
+                    <Typography variant="body2">Giá cơ bản: <strong>{item.base_price ? item.base_price.toLocaleString('vi-VN') : 'N/A'} VND</strong></Typography>
+                    <Typography variant="body2">Số ngày: <strong>{item.days || 'N/A'}</strong></Typography>
+                    <Typography variant="body2">Phụ thu: <strong>{item.surcharge ? item.surcharge.toLocaleString('vi-VN') : '0'} VND</strong></Typography>
+                    <Typography variant="body2">Tổng phụ: <strong>{item.subtotal ? item.subtotal.toLocaleString('vi-VN') : 'N/A'} VND</strong></Typography>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+            <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
+              Tổng tiền: <strong>{invoice.amount ? Number(invoice.amount).toLocaleString('vi-VN') : 'N/A'} VND</strong>
             </Typography>
-            <Typography variant="body1">
-              <strong>Trạng thái:</strong> {invoice.status ? 'Đã thanh toán' : 'Chưa thanh toán'}
+            <Typography variant="body2" sx={{ mb: 2 }}>
+              Ngày thanh toán: <strong>{invoice.paid_at ? new Date(invoice.paid_at).toLocaleDateString('vi-VN') : '–'}</strong>
             </Typography>
-            <Typography variant="body1">
-              <strong>Ngày thanh toán:</strong>{' '}
-              {invoice.paid_at ? new Date(invoice.paid_at).toLocaleDateString('vi-VN') : 'N/A'}
-            </Typography>
-          </Grid>
-          <Grid item xs={12}>
-            <Typography variant="body1">
-              <strong>Chi tiết thuê phòng:</strong>
-            </Typography>
-            <Typography variant="body2">
-              Check-in: {new Date(invoice.rental_detail.check_in_date).toLocaleDateString('vi-VN')}
-            </Typography>
-            <Typography variant="body2">
-              Check-out: {new Date(invoice.rental_detail.check_out_date).toLocaleDateString('vi-VN')}
-            </Typography>
-            <Typography variant="body2">
-              Số khách: {invoice.rental_detail.guest_count}
-            </Typography>
-          </Grid>
-        </Grid>
-
-        {!invoice.status && (
-          <Box sx={{ mt: 3 }}>
             <Button
               variant="contained"
-              sx={{ bgcolor: '#DAA520', '&:hover': { bgcolor: '#B8860B' } }}
-              onClick={handleGeneratePaymentUrl}
+              color="primary"
+              onClick={() => navigate('/invoices')}
+              sx={{ mt: 2 }}
             >
-              Tạo Mã QR Thanh Toán
+              Quay lại
             </Button>
-            {paymentUrl && (
-              <Box sx={{ mt: 2, textAlign: 'center' }}>
-                <Typography variant="body1">Quét mã QR để thanh toán:</Typography>
-                <QRCodeCanvas value={paymentUrl} size={200} />
-              </Box>
-            )}
-          </Box>
-        )}
-
-        <Box sx={{ mt: 3 }}>
-          <Button
-            variant="contained"
-            sx={{ bgcolor: '#DAA520', '&:hover': { bgcolor: '#B8860B' } }}
-            onClick={handlePrint}
-          >
-            In Hóa Đơn
-          </Button>
-          <Button
-            variant="outlined"
-            sx={{ ml: 2, borderColor: '#DAA520', color: '#DAA520' }}
-            onClick={() => navigate('/invoices')}
-          >
-            Quay Lại
-          </Button>
-        </Box>
-      </Paper>
-    </Container>
+          </CardContent>
+        </Card>
+      </Container>
+    </Box>
   );
 };
 
