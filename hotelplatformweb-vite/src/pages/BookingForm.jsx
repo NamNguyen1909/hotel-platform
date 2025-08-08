@@ -58,6 +58,8 @@ const BookingForm = () => {
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState('');
   const [roomDetails, setRoomDetails] = useState(null);
+  const [roomTypes, setRoomTypes] = useState([]);
+  const [roomTypesLoading, setRoomTypesLoading] = useState(true);
   const [customers, setCustomers] = useState([]);
   const [pricing, setPricing] = useState(null);
   const [pricingLoading, setPricingLoading] = useState(false);
@@ -96,15 +98,24 @@ const BookingForm = () => {
 
   React.useEffect(() => {
     if (roomId) {
-      const fetchRoomDetails = async () => {
+      const fetchRoomDetailsAndTypes = async () => {
         try {
-          const response = await api.get(`/rooms/${roomId}/`);
-          setRoomDetails(response.data);
+          // Fetch room details
+          const roomResponse = await api.get(`/rooms/${roomId}/`);
+          setRoomDetails(roomResponse.data);
+
+          // Fetch room types
+          const typesResponse = await api.get('room-types/');
+          setRoomTypes(Array.isArray(typesResponse.data.results) ? typesResponse.data.results : typesResponse.data);
         } catch {
-          setErrors({ global: 'Không thể tải thông tin phòng.' });
+          setErrors({ global: 'Không thể tải thông tin phòng hoặc loại phòng.' });
+        } finally {
+          setRoomTypesLoading(false);
         }
       };
-      fetchRoomDetails();
+      fetchRoomDetailsAndTypes();
+    } else {
+      setRoomTypesLoading(false);
     }
   }, [roomId]);
 
@@ -122,6 +133,39 @@ const BookingForm = () => {
     }
   }, [userRole]);
 
+  const getRoomTypeInfo = (roomTypeId) => {
+    // Handle both numeric and string IDs
+    const normalizedId = roomTypeId?.toString();
+    
+    // Handle case where room_type is an object
+    let targetId = normalizedId;
+    if (roomTypeId && typeof roomTypeId === 'object' && roomTypeId.id) {
+      targetId = roomTypeId.id.toString();
+    }
+    
+    // Find matching room type
+    const roomType = roomTypes.find((type) => 
+      type.id.toString() === targetId || 
+      type.id === roomTypeId || 
+      (type.id === roomTypeId?.id)
+    );
+    
+    // Parse base_price properly
+    let basePrice = 0;
+    if (roomType?.base_price) {
+      basePrice = parseFloat(roomType.base_price);
+    } else if (roomDetails?.room_type_price) {
+      basePrice = parseFloat(roomDetails.room_type_price);
+    }
+    
+    return roomType || { 
+      name: roomDetails?.room_type_name || 
+            (roomTypeId?.name || 'N/A'), 
+      base_price: basePrice || 0, 
+      max_guests: roomType?.max_guests || roomDetails?.max_guests || 'N/A'
+    };
+  };
+
   const validate = useCallback(() => {
     const errs = {};
     if (!formData.rooms.length) errs.rooms = 'Vui lòng chọn một phòng.';
@@ -134,8 +178,9 @@ const BookingForm = () => {
       errs.checkInDate = 'Ngày nhận phòng không được vượt quá 28 ngày kể từ hôm nay.';
     }
     if (formData.guestCount < 1) errs.guestCount = 'Số khách phải lớn hơn 0.';
-    if (roomDetails?.room_type?.max_guests && formData.guestCount > roomDetails.room_type.max_guests) {
-      errs.guestCount = `Số khách không được vượt quá ${roomDetails.room_type.max_guests} người.`;
+    const roomTypeInfo = roomDetails ? getRoomTypeInfo(roomDetails.room_type) : null;
+    if (roomTypeInfo?.max_guests && formData.guestCount > roomTypeInfo.max_guests) {
+      errs.guestCount = `Số khách không được vượt quá ${roomTypeInfo.max_guests} người.`;
     }
     if (['staff', 'admin', 'owner'].includes(userRole) && !formData.customer) {
       errs.customer = 'Vui lòng chọn khách hàng.';
@@ -145,7 +190,7 @@ const BookingForm = () => {
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
-  }, [formData, roomDetails, userRole, isRoomAvailable]);
+  }, [formData, roomDetails, userRole, isRoomAvailable, roomTypes]);
 
   const handleCalculatePrice = async () => {
     if (!validate()) return;
@@ -266,6 +311,8 @@ const BookingForm = () => {
     return 0;
   }, [formData.checkInDate, formData.checkOutDate]);
 
+  const roomTypeInfo = roomDetails && !roomTypesLoading ? getRoomTypeInfo(roomDetails.room_type) : null;
+
   return (
     <ErrorBoundary>
       <Box sx={{ bgcolor: 'background.default', minHeight: '100vh', py: 6 }}>
@@ -323,10 +370,10 @@ const BookingForm = () => {
                   <Typography variant="h6" sx={{ fontFamily: 'Inter', color: '#8B4513', mb: 2, fontWeight: 600 }}>
                     Thông Tin Phòng
                   </Typography>
-                  {roomDetails ? (
+                  {roomDetails && !roomTypesLoading && roomTypeInfo ? (
                     <Typography variant="body1" sx={{ fontFamily: 'Inter', mb: 1.5 }}>
-                      <strong>Phòng đã chọn:</strong> {roomDetails.room_number} - {roomDetails.room_type_name || 'N/A'} (
-                      {formatCurrency(roomDetails.room_type_price)}/đêm)
+                      <strong>Phòng đã chọn:</strong> {roomDetails.room_number} - {roomTypeInfo.name} (
+                      {formatCurrency(parseFloat(roomTypeInfo.base_price))}/đêm)
                     </Typography>
                   ) : (
                     <Typography variant="body1" sx={{ fontFamily: 'Inter', color: 'text.secondary' }}>
@@ -407,7 +454,7 @@ const BookingForm = () => {
                         value={formData.guestCount}
                         onChange={(e) => handleInputChange('guestCount', parseInt(e.target.value) || 1)}
                         InputProps={{
-                          inputProps: { min: 1, max: roomDetails?.room_type?.max_guests || undefined },
+                          inputProps: { min: 1, max: roomTypeInfo?.max_guests || undefined },
                           sx: { fontFamily: 'Inter' },
                         }}
                         sx={{
@@ -418,7 +465,7 @@ const BookingForm = () => {
                         }}
                         required
                         error={!!errors.guestCount}
-                        helperText={errors.guestCount || (roomDetails?.room_type?.max_guests ? `Tối đa ${roomDetails.room_type.max_guests} khách` : '')}
+                        helperText={errors.guestCount || (roomTypeInfo?.max_guests && !roomTypesLoading ? `Tối đa ${roomTypeInfo.max_guests} khách` : '')}
                       />
                     </Grid>
                     <Grid item xs={12}>
@@ -530,7 +577,7 @@ const BookingForm = () => {
                 <Button
                   variant="contained"
                   onClick={handlePreviewBooking}
-                  disabled={loading || Object.keys(errors).length > 0 || !pricing || isRoomAvailable === false}
+                  disabled={loading || Object.keys(errors).length > 0 || !pricing || isRoomAvailable === false || roomTypesLoading}
                   sx={{
                     bgcolor: '#DAA520',
                     '&:hover': { bgcolor: '#B8860B' },
@@ -570,7 +617,7 @@ const BookingForm = () => {
                   {(customers.find((c) => c.id === formData.customer) || user)?.email || 'N/A'})
                 </Typography>
                 <Typography variant="body1" sx={{ mb: 1.5 }}>
-                  <strong>Phòng:</strong> {roomDetails?.room_number} ({roomDetails?.room_type_name || 'N/A'})
+                  <strong>Phòng:</strong> {roomDetails?.room_number} ({roomTypeInfo?.name || 'N/A'})
                 </Typography>
                 <Typography variant="body1" sx={{ mb: 1.5 }}>
                   <strong>Ngày nhận phòng:</strong>{' '}
@@ -615,7 +662,7 @@ const BookingForm = () => {
               <Button
                 onClick={confirmBooking}
                 variant="contained"
-                disabled={loading}
+                disabled={loading || roomTypesLoading}
                 sx={{
                   bgcolor: '#DAA520',
                   '&:hover': { bgcolor: '#B8860B' },

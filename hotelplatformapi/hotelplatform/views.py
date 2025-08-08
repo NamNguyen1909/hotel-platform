@@ -1792,12 +1792,11 @@ class RoomImageViewSet(viewsets.ViewSet, generics.ListAPIView, generics.Retrieve
             'room_image': RoomImageSerializer(room_image).data
         })
 
-    @action(detail=False, methods=['get'])
-    def by_room(self, request):
+    @action(detail=False, methods=['get'], url_path='by_room/(?P<room_id>[^/.]+)')
+    def by_room(self, request, room_id=None):
         """
         Lấy tất cả ảnh của một phòng cụ thể
         """
-        room_id = request.query_params.get('room_id')
         if not room_id:
             return Response(
                 {"error": "Vui lòng cung cấp room_id"},

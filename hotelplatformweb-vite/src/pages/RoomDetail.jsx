@@ -122,12 +122,12 @@ const RoomDetail = () => {
                   <Typography variant="h6" sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 600, mb: 2 }}>
                     Mô Tả & Tiện Nghi
                   </Typography>
-                  <Typography variant="body1" sx={{ fontFamily: 'Inter', mb: 1.5 }}>
+                  <Box sx={{ fontFamily: 'Inter', mb: 1.5 }}>
                     <strong>Tiện nghi:</strong>{' '}
                     {room.room_type?.amenities?.split(',').map((amenity, index) => (
                       <Chip key={index} label={amenity.trim()} sx={{ m: 0.5, fontFamily: 'Inter' }} />
                     )) || 'Không có thông tin'}
-                  </Typography>
+                  </Box>
                   <Typography variant="body1" sx={{ fontFamily: 'Inter', mb: 1.5 }}>
                     <strong>Mô tả:</strong> {room.room_type?.description || 'Không có mô tả'}
                   </Typography>
@@ -137,7 +137,6 @@ const RoomDetail = () => {
             <Box sx={{ mt: 4, display: 'flex', gap: 2, justifyContent: 'center' }}>
               <Button
                 variant="contained"
-                disabled={room.status !== 'available'}
                 onClick={handleBookRoom}
                 sx={{
                   bgcolor: '#DAA520',
