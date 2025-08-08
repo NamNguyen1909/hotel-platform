@@ -23,11 +23,9 @@ import RoomDetail from './pages/RoomDetail';
 import BookingForm from './pages/BookingForm';
 import InvoiceDetail from './pages/InvoiceDetail';
 
-// Component wrapper để check route và hiển thị header/footer
 const AppContent = () => {
   const location = useLocation();
   
-  // Ẩn header và footer ở trang login và register
   const hideHeaderFooterRoutes = ['/login', '/register'];
   const shouldShowHeaderFooter = !hideHeaderFooterRoutes.includes(location.pathname);
 
@@ -47,21 +45,16 @@ const AppContent = () => {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path='/profile' element={<Profile />} />
+          <Route path="/profile" element={<Profile />} />
           <Route path="/rooms-management" element={<RoomsManagement />} />
           <Route path="/staffs-management" element={<StaffsManagement />} />
           <Route path="/customers-management" element={<CustomersManagement />} />
-
           <Route path="/staff/bookings" element={<Bookings />} />
-          <Route path="/staff/invoices" element={<Invoices />} />
-
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/rooms/:id" element={<RoomDetail />} />
-
           <Route path="/book" element={<BookingForm />} />
+          <Route path="/invoices" element={<Invoices />} />
           <Route path="/invoice/:id" element={<InvoiceDetail />} />
-
-          {/* Thêm các route khác nếu cần */}
         </Routes>
       </Box>
       {shouldShowHeaderFooter && <Footer />}

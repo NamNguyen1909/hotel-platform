@@ -49,7 +49,7 @@ const Rooms = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [roomTypeFilter, setRoomTypeFilter] = useState('');
   const [guestCountFilter, setGuestCountFilter] = useState('');
-  const [priceRange, setPriceRange] = useState([0, 5000000]); // Default range: 0 - 5M VND
+  const [priceRange, setPriceRange] = useState([0, 5000000]);
   const [loginDialogOpen, setLoginDialogOpen] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [roomImages, setRoomImages] = useState({});
@@ -124,12 +124,9 @@ const Rooms = () => {
     fetchRooms();
   }, [searchQuery, roomTypeFilter, guestCountFilter, priceRange, currentPage, pageSize]);
 
-  // Function để refresh room status
   const refreshRoomStatus = async () => {
-    // Chỉ refresh room status khi không đang loading
     if (!loading) {
       try {
-        // Refresh room data trong background để cập nhật trạng thái phòng
         const response = await api.get('/rooms/', {
           params: {
             search: searchQuery,
@@ -150,16 +147,11 @@ const Rooms = () => {
         console.log('🏨 Room status auto-refreshed');
       } catch (error) {
         console.error('Room status auto-refresh error:', error);
-        // Không hiển thị error cho auto-refresh để tránh làm phiền user
       }
     }
   };
 
-  // Smart Auto-refresh Room Status với custom hook - 3 phút interval
-  const { isRunning } = useRoomsPolling(
-    refreshRoomStatus,
-    !loading // Chỉ enable khi không đang loading
-  );
+  const { isRunning } = useRoomsPolling(refreshRoomStatus, !loading);
 
   const handleFilter = () => {
     const params = new URLSearchParams();
@@ -207,6 +199,11 @@ const Rooms = () => {
 
   const formatCurrency = (value) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
+  };
+
+  const getMaxGuests = (roomTypeId) => {
+    const roomType = roomTypes.find((type) => type.id === roomTypeId);
+    return roomType?.max_guests || 'N/A';
   };
 
   return (
@@ -371,7 +368,7 @@ const Rooms = () => {
                         Trạng thái: {room.status === 'available' ? 'Còn trống' : room.status === 'booked' ? 'Đã đặt' : 'Đang sử dụng'}
                       </Typography>
                       <Typography variant="body2" sx={{ fontFamily: 'Inter', color: 'text.secondary', mb: 1 }}>
-                        Tối đa: {room.room_type?.max_guests || 'N/A'} khách
+                        Tối đa: {getMaxGuests(room.room_type)} khách
                       </Typography>
                       {room.room_type?.amenities && (
                         <>

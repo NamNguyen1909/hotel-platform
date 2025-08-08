@@ -65,13 +65,13 @@ const menuItemsByRole = {
     { text: 'Phòng', icon: <Hotel />, path: '/rooms' },
     { text: 'Khách hàng', icon: <People />, path: '/customers-management' },
     { text: 'Đặt phòng', icon: <Book />, path: '/staff/bookings' },
-    { text: 'Hóa đơn', icon: <Receipt />, path: '/staff/invoices' },
+    { text: 'Hóa đơn', icon: <Receipt />, path: '/invoices' }, // Sửa từ /staff/invoices
   ],
   customer: [
     { text: 'Trang chủ', icon: <Home />, path: '/' },
     { text: 'Phòng', icon: <Hotel />, path: '/rooms' },
     { text: 'Đặt phòng của tôi', icon: <Book />, path: '/my-bookings' },
-    { text: 'Thanh toán', icon: <Payment />, path: '/payments' },
+    { text: 'Hóa đơn', icon: <Receipt />, path: '/invoices' }, // Sửa từ /payments
   ],
   guest: [
     { text: 'Trang chủ', icon: <Home />, path: '/' },
@@ -91,7 +91,6 @@ const Header = () => {
   const [userRole, setUserRole] = useState('guest');
   const [notifications, setNotifications] = useState(0);
 
-  // Lấy thông tin user và role
   useEffect(() => {
     const fetchUserInfo = async () => {
       if (authUtils.isAuthenticated()) {
@@ -114,7 +113,6 @@ const Header = () => {
     fetchUserInfo();
   }, []);
 
-  // Smart Polling với Page Visibility API - sử dụng custom hook
   const fetchNotifications = async () => {
     if (authUtils.isAuthenticated()) {
       try {
@@ -130,11 +128,7 @@ const Header = () => {
     }
   };
 
-  // Sử dụng custom hook cho notifications polling
-  useNotificationsPolling(
-    fetchNotifications, 
-    authUtils.isAuthenticated() && user // Chỉ enable khi user đã authenticated
-  );
+  useNotificationsPolling(fetchNotifications, authUtils.isAuthenticated() && user);
 
   const handleOpenUserMenu = (event) => {
     setAnchorElUser(event.currentTarget);
@@ -180,10 +174,8 @@ const Header = () => {
     }
   };
 
-  // Lấy menu items theo role hiện tại
   const menuItems = menuItemsByRole[userRole] || menuItemsByRole.guest;
 
-  // User menu items
   const userMenuItems = authUtils.isAuthenticated()
     ? [
         { text: 'Hồ sơ', action: () => handleNavigation('/profile') },
@@ -195,7 +187,6 @@ const Header = () => {
         { text: 'Đăng ký', action: () => handleNavigation('/register') },
       ];
 
-  // Mobile drawer content
   const drawer = (
     <Box onClick={handleDrawerToggle} sx={{ textAlign: 'center' }}>
       <Typography variant="h6" sx={{ my: 2, color: 'primary.main', fontWeight: 'bold' }}>
@@ -218,9 +209,7 @@ const Header = () => {
                 },
               }}
             >
-              <ListItemIcon sx={{ color: 'inherit' }}>
-                {item.icon}
-              </ListItemIcon>
+              <ListItemIcon sx={{ color: 'inherit' }}>{item.icon}</ListItemIcon>
               <ListItemText primary={item.text} />
             </ListItemButton>
           </ListItem>
@@ -234,7 +223,6 @@ const Header = () => {
       <AppBar position="sticky" elevation={2}>
         <Container maxWidth="xl">
           <Toolbar disableGutters>
-            {/* Logo cho desktop */}
             <Typography
               variant="h6"
               noWrap
@@ -253,7 +241,6 @@ const Header = () => {
               🏨 Hotel Platform
             </Typography>
 
-            {/* Mobile menu button */}
             <Box sx={{ flexGrow: 1, display: { xs: 'flex', md: 'none' } }}>
               <IconButton
                 size="large"
@@ -265,7 +252,6 @@ const Header = () => {
               </IconButton>
             </Box>
 
-            {/* Logo cho mobile */}
             <Typography
               variant="h5"
               noWrap
@@ -285,7 +271,6 @@ const Header = () => {
               🏨 Hotel
             </Typography>
 
-            {/* Desktop menu */}
             <Box sx={{ flexGrow: 1, display: { xs: 'none', md: 'flex' } }}>
               {menuItems.map((item) => (
                 <Button
@@ -310,7 +295,6 @@ const Header = () => {
               ))}
             </Box>
 
-            {/* Right side - Notifications & User menu */}
             <Box sx={{ flexGrow: 0, display: 'flex', alignItems: 'center' }}>
               {authUtils.isAuthenticated() && (
                 <Tooltip title="Thông báo">
@@ -379,7 +363,6 @@ const Header = () => {
         </Container>
       </AppBar>
 
-      {/* Mobile drawer */}
       <Drawer
         variant="temporary"
         open={mobileOpen}

@@ -532,15 +532,29 @@ class RoomRentalSerializer(ModelSerializer):
 
 
 # Serializer cho Payment
-class PaymentSerializer(ModelSerializer):
+class PaymentSerializer(serializers.ModelSerializer):
+    customer_name = serializers.CharField(source='rental.customer.full_name', read_only=True)
+    rental_id = serializers.IntegerField(source='rental.id', read_only=True)
+    check_in_date = serializers.DateTimeField(source='rental.check_in_date', read_only=True)
+    check_out_date = serializers.DateTimeField(source='rental.check_out_date', read_only=True)
     customer_detail = serializers.SerializerMethodField()
     rental_detail = serializers.SerializerMethodField()
+    items = serializers.SerializerMethodField()
     amount = serializers.SerializerMethodField()
 
     class Meta:
         model = Payment
-        fields = ['id', 'rental', 'rental_detail', 'customer_detail', 'amount', 'payment_method', 'status', 'paid_at', 'transaction_id', 'discount_code']
-        read_only_fields = ['id', 'paid_at', 'transaction_id']
+        fields = [
+            'id', 'rental', 'rental_id', 'customer_name', 'customer_detail', 
+            'check_in_date', 'check_out_date', 'rental_detail', 'items', 
+            'amount', 'payment_method', 'status', 'paid_at', 'created_at', 
+            'transaction_id', 'discount_code'
+        ]
+        read_only_fields = [
+            'id', 'rental_id', 'customer_name', 'check_in_date', 'check_out_date', 
+            'customer_detail', 'rental_detail', 'items', 'amount', 'paid_at', 
+            'created_at', 'transaction_id'
+        ]
 
     def get_customer_detail(self, obj):
         return {
@@ -556,6 +570,27 @@ class PaymentSerializer(ModelSerializer):
             'check_out_date': obj.rental.check_out_date,
             'guest_count': obj.rental.guest_count,
         }
+
+    def get_items(self, obj):
+        """Tạo danh sách khoản phí từ RoomRental"""
+        rental = obj.rental
+        actual_days = max((rental.check_out_date - rental.check_in_date).days, 1)
+        items = []
+        for room in rental.rooms.all():
+            room_price = room.room_type.base_price * actual_days
+            surcharge = Decimal('0')
+            if rental.guest_count > room.room_type.max_guests:
+                extra_guests = rental.guest_count - room.room_type.max_guests
+                surcharge = room.room_type.base_price * (room.room_type.extra_guest_surcharge / 100) * extra_guests * actual_days
+            items.append({
+                'room_id': room.id,
+                'room_type': room.room_type.name,
+                'base_price': float(room.room_type.base_price),
+                'days': actual_days,
+                'surcharge': float(surcharge),
+                'subtotal': float(room_price + surcharge)
+            })
+        return items
 
     def get_amount(self, obj):
         amount = obj.rental.total_price

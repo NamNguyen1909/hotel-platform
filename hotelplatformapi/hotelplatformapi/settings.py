@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',  # JWT blacklist
     'oauth2_provider',  # Django OAuth Toolkit (for future third-party login)
     'corsheaders',  # CORS headers
+    'django_filters',  # Django filters for REST framework
 ]
 
 MIDDLEWARE = [

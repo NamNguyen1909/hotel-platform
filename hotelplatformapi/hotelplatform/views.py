@@ -17,6 +17,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.views import APIView
 from rest_framework.filters import SearchFilter, OrderingFilter
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.exceptions import ValidationError
 
 # Django imports
@@ -1791,12 +1792,11 @@ class RoomImageViewSet(viewsets.ViewSet, generics.ListAPIView, generics.Retrieve
             'room_image': RoomImageSerializer(room_image).data
         })
 
-    @action(detail=False, methods=['get'])
-    def by_room(self, request):
+    @action(detail=False, methods=['get'], url_path='by_room/(?P<room_id>[^/.]+)')
+    def by_room(self, request, room_id=None):
         """
         Lấy tất cả ảnh của một phòng cụ thể
         """
-        room_id = request.query_params.get('room_id')
         if not room_id:
             return Response(
                 {"error": "Vui lòng cung cấp room_id"},
@@ -1961,3 +1961,18 @@ class RoomStatusUpdateTaskView(APIView):
             
             logger.error(f"Room status update task failed: {str(e)}")
             return Response(error_result, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class InvoiceViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
+    queryset = Payment.objects.all()
+    serializer_class = PaymentSerializer
+    permission_classes = [IsAuthenticated, IsPaymentOwner | CanManagePayments]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ['customer__full_name', 'status']
+    search_fields = ['customer__full_name', 'rental__id', 'transaction_id']
+    ordering_fields = ['created_at', 'amount']
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role in ['admin', 'owner', 'staff']:
+            return Payment.objects.all()
+        return Payment.objects.filter(customer=user)

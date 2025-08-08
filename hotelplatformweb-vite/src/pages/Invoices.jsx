@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   Container, Box, Typography, TextField, InputAdornment,
-  Select, MenuItem, FormControl, InputLabel, Card,
-  CardContent, Chip, Button, Grid, Skeleton, Alert, Pagination
+  Select, MenuItem, FormControl, InputLabel, Card, CardContent, Chip, Button, Grid, Skeleton, Alert, Pagination
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/apis';
+import { endpoints } from '../services/apis';
 
 const Invoices = () => {
   const [invoices, setInvoices] = useState([]);
@@ -23,7 +23,7 @@ const Invoices = () => {
     (async () => {
       setLoading(true);
       try {
-        const res = await api.get('/payments/');
+        const res = await api.get(endpoints.invoices.list);
         setInvoices(res.data);
         setError(null);
       } catch {
@@ -35,8 +35,8 @@ const Invoices = () => {
   }, []);
 
   const filtered = invoices
-    .filter(inv => inv.customer_detail?.full_name?.toLowerCase().includes(search.toLowerCase()) ||
-                    inv.id.toString().includes(search))
+    .filter(inv => inv.customer_name?.toLowerCase().includes(search.toLowerCase()) ||
+                   inv.id.toString().includes(search))
     .filter(inv => statusFilter === 'all' ||
            (statusFilter === 'paid' ? inv.status : !inv.status));
 
@@ -80,15 +80,6 @@ const Invoices = () => {
               <MenuItem value="unpaid">Chưa thanh toán</MenuItem>
             </Select>
           </FormControl>
-
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={() => navigate('/create-invoice')}
-            sx={{ height: 56 }}
-          >
-            Tạo Hóa Đơn
-          </Button>
         </Box>
 
         {loading ? (
@@ -110,8 +101,8 @@ const Invoices = () => {
                 <Grid key={inv.id} item xs={12} sm={6} md={4}>
                   <Card sx={{ borderRadius: 2, height: '100%' }}>
                     <CardContent>
-                      <Box sx={{ display:'flex', alignItems:'center', mb:2 }}>
-                        <ReceiptLongIcon fontSize="large" color="primary" sx={{ mr:1 }} />
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                        <ReceiptLongIcon fontSize="large" color="primary" sx={{ mr: 1 }} />
                         <Typography variant="h6">
                           Hóa đơn #{inv.id}
                         </Typography>
@@ -123,23 +114,21 @@ const Invoices = () => {
                         />
                       </Box>
                       <Typography variant="body2" sx={{ mb: 1 }}>
-                        Khách hàng: <strong>{inv.customer_detail?.full_name || 'N/A'}</strong>
+                        Khách hàng: <strong>{inv.customer_name || 'N/A'}</strong>
                       </Typography>
                       <Typography variant="body2" sx={{ mb: 1 }}>
-                        Số tiền: <strong>{Number(inv.amount).toLocaleString('vi-VN')} VND</strong>
+                        Số tiền: <strong>{inv.amount ? Number(inv.amount).toLocaleString('vi-VN') : 'N/A'} VND</strong>
                       </Typography>
                       <Typography variant="body2" sx={{ mb: 2 }}>
-                        Ngày: {inv.paid_at ? new Date(inv.paid_at).toLocaleDateString('vi-VN') : '–'}
+                        Ngày: {inv.created_at ? new Date(inv.created_at).toLocaleDateString('vi-VN') : '–'}
                       </Typography>
-                      {!inv.status && (
-                        <Button
-                          variant="outlined"
-                          fullWidth
-                          onClick={() => navigate(`/invoice/${inv.id}`)}
-                        >
-                          Xem chi tiết
-                        </Button>
-                      )}
+                      <Button
+                        variant="outlined"
+                        fullWidth
+                        onClick={() => navigate(`/invoice/${inv.id}`)}
+                      >
+                        Xem chi tiết
+                      </Button>
                     </CardContent>
                   </Card>
                 </Grid>

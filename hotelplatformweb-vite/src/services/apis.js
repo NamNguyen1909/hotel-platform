@@ -172,6 +172,12 @@ export const endpoints = {
     history: '/payments/history/',
     refund: (id) => `/payments/${id}/refund/`,
   },
+
+  // Invoice endpoints
+  invoices: {
+    list: '/invoices/',
+    detail: (id) => `/invoices/${id}/`,
+  },
   
   // Discount code endpoints
   discountCodes: {
