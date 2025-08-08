@@ -6,6 +6,7 @@ from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import urllib
 import logging
+from decimal import Decimal, ROUND_HALF_UP
 
 # Thiết lập logger
 logger = logging.getLogger(__name__)
@@ -671,11 +672,19 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         #  TIME VALIDATION - Enhanced for development flexibility
         now = timezone.now()
         logger.info(f"Current time: {now}, Booking check-in time: {booking.check_in_date}")
-        logger.info("Time validation skipped for testing purposes - Enable for production")
         
-        # Comment để test checkin / Uncomment cho production
-        if now.date() < booking.check_in_date.date():
-            return Response({"error": "Chưa đến ngày check-in"}, status=status.HTTP_400_BAD_REQUEST)
+        # Chuyển đổi thời gian để so sánh đúng timezone
+        current_date = now.date()
+        checkin_date = booking.check_in_date.date()
+        
+        logger.info(f"Current date: {current_date}, Check-in date: {checkin_date}")
+        
+        # Cho phép check-in trong cùng ngày hoặc sau ngày check-in
+        if current_date < checkin_date:
+            logger.warning(f"Too early for check-in: {current_date} < {checkin_date}")
+            return Response({
+                "error": f"Chưa đến ngày check-in. Ngày check-in: {checkin_date}, Ngày hiện tại: {current_date}"
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         #  ROOM STATUS VALIDATION - Ensure all rooms are available for check-in
         logger.info(f"Checking room statuses for booking {pk}")
@@ -793,10 +802,19 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
 
     @action(detail=True, methods=['post'])
     def checkout(self, request, pk=None):
-        """CHECK-OUT LOGIC - Comprehensive checkout process for bookings"""
+        """CHECK-OUT LOGIC - Comprehensive checkout process for bookings with payment integration"""
         logger.info(f"=== Starting check-out process for booking {pk} ===")
         logger.info(f"Check-out request for booking {pk}")
         logger.info(f"User: {request.user}, Role: {getattr(request.user, 'role', 'No role')}")
+        
+        # Lấy thông tin từ request (optional cho backward compatibility)
+        payment_method = request.data.get('payment_method', 'cash')
+        discount_code_id = request.data.get('discount_code_id')
+        
+        # Validate payment method
+        valid_methods = [choice[0] for choice in Payment.PAYMENT_METHOD_CHOICES]
+        if payment_method not in valid_methods:
+            payment_method = 'cash'  # Default fallback
         
         # BOOKING VALIDATION - Ensure booking exists and is in correct state
         try:
@@ -832,6 +850,24 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
                 {"error": "Đã check-out trước đó"}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        # VALIDATE DISCOUNT CODE IF PROVIDED
+        discount_code = None
+        if discount_code_id:
+            try:
+                discount_code = DiscountCode.objects.get(id=discount_code_id)
+                if not discount_code.is_applicable_for_user(booking.customer):
+                    logger.warning(f"Discount code {discount_code_id} not applicable for customer {booking.customer.id}")
+                    return Response(
+                        {"error": "Mã giảm giá không áp dụng được cho khách hàng này"}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            except DiscountCode.DoesNotExist:
+                logger.warning(f"Discount code {discount_code_id} not found")
+                return Response(
+                    {"error": "Mã giảm giá không tồn tại"}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
 
         # DATABASE TRANSACTION - Atomic operation for data consistency
         logger.info(f"Starting transaction for booking checkout {pk}")
@@ -845,34 +881,122 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
                 booking.save(update_fields=['status', 'updated_at'])
                 logger.info(f"Booking {booking.id} status updated to CHECKED_OUT")
                 
-                # Step 2: Update RoomRental with actual checkout time
-                logger.info(f"Step 2: Setting actual_check_out_date for RoomRental")
+                # Step 2: Update RoomRental with actual checkout time and calculate final price
+                logger.info(f"Step 2: Setting actual_check_out_date and calculating final price")
                 room_rental.actual_check_out_date = now
-                room_rental.save(update_fields=['actual_check_out_date'])
-                logger.info(f"RoomRental {room_rental.id} actual_check_out_date set to {now}")
                 
-                # Step 3: Create Payment record (will be handled by RoomRental signals)
-                # The payment will be automatically created by the RoomRental post_save signal
+                # Calculate discount if applicable
+                original_price = room_rental.total_price
+                discount_amount = Decimal('0')
+                
+                if discount_code:
+                    # Tính discount và làm tròn đến 2 chữ số thập phân
+                    discount_amount = (original_price * (discount_code.discount_percentage / Decimal('100'))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                    room_rental.total_price = (original_price - discount_amount).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                    
+                    # Update discount code usage
+                    discount_code.used_count = F('used_count') + 1
+                    discount_code.save(update_fields=['used_count'])
+                    logger.info(f"Applied discount: {discount_code.code} - {discount_amount}")
+                
+                room_rental.save(update_fields=['actual_check_out_date', 'total_price'])
+                logger.info(f"RoomRental {room_rental.id} updated with final price: {room_rental.total_price}")
+                
+                # Step 3: Create Payment record manually with enhanced details
+                import uuid
+                payment = Payment.objects.create(
+                    rental=room_rental,
+                    customer=booking.customer,
+                    amount=room_rental.total_price,
+                    payment_method=payment_method,
+                    status=True if payment_method == 'cash' else False,  # Cash payments are immediately confirmed
+                    transaction_id=f"PAY_{now.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}",
+                    discount_code=discount_code,
+                )
+                logger.info(f"Created Payment {payment.id} with method {payment_method}")
                 
                 # Step 4: Room status will be updated automatically by Booking signals
                 # Signal will change room status from 'occupied' to 'available'
                 
-                # Step 5: Get the created payment for response
-                payment = room_rental.payments.last()
+                # Step 5: Handle VNPay integration if needed
+                if payment_method == 'vnpay':
+                    # Sử dụng hàm create_payment_url đã có sẵn
+                    try:
+                        # Tạo mock request với amount parameter để gọi create_payment_url
+                        from django.http import QueryDict
+                        mock_request = type('MockRequest', (), {
+                            'GET': QueryDict(f'amount={room_rental.total_price}'),
+                            'META': request.META
+                        })()
+                        
+                        # Gọi hàm create_payment_url đã có sẵn
+                        vnpay_response = create_payment_url(mock_request)
+                        vnpay_data = vnpay_response.content.decode('utf-8')
+                        import json
+                        vnpay_json = json.loads(vnpay_data)
+                        vnpay_url = vnpay_json.get('payment_url')
+                        
+                        # Update payment với pending status
+                        payment.status = False  # Pending payment
+                        payment.save(update_fields=['status'])
+                        logger.info(f"VNPay payment URL created for booking {booking.id}")
+                        
+                        # Return response với VNPay URL
+                        response_data = {
+                            "message": "Check-out thành công. Chuyển hướng đến VNPay để thanh toán.", 
+                            "booking_id": booking.id,
+                            "rental_id": room_rental.id,
+                            "check_out_time": now.isoformat(),
+                            "original_price": str(original_price),
+                            "discount_amount": str(discount_amount),
+                            "final_price": str(room_rental.total_price),
+                            "payment": PaymentSerializer(payment).data,
+                            "booking": BookingDetailSerializer(booking).data,
+                            "payment_status": "pending",
+                            "vnpay_url": vnpay_url,
+                            "payment_instructions": "Vui lòng thanh toán qua VNPay để hoàn tất checkout."
+                        }
+                        return Response(response_data, status=status.HTTP_200_OK)
+                        
+                    except Exception as vnpay_error:
+                        logger.error(f"VNPay integration error: {str(vnpay_error)}")
+                        # Fallback to pending payment
+                        payment.status = False
+                        payment.save(update_fields=['status'])
+                        
+                        response_data = {
+                            "message": "Check-out thành công. VNPay không khả dụng, vui lòng thanh toán thủ công.", 
+                            "booking_id": booking.id,
+                            "rental_id": room_rental.id,
+                            "check_out_time": now.isoformat(),
+                            "original_price": str(original_price),
+                            "discount_amount": str(discount_amount),
+                            "final_price": str(room_rental.total_price),
+                            "payment": PaymentSerializer(payment).data,
+                            "booking": BookingDetailSerializer(booking).data,
+                            "payment_status": "pending",
+                            "payment_instructions": "VNPay không khả dụng. Vui lòng liên hệ lễ tân để thanh toán."
+                        }
+                        return Response(response_data, status=status.HTTP_200_OK)
                 
-                # HOÀN THÀNH - Trả về response thành công
+                # HOÀN THÀNH - Trả về response thành công cho cash/stripe payments
                 logger.info(f"Check-out thành công cho Booking {booking.id}")
                 logger.info(f"Rooms will be set to available: {[room.room_number for room in booking.rooms.all()]}")
                 
-                return Response({
+                response_data = {
                     "message": "Check-out thành công", 
                     "booking_id": booking.id,
                     "rental_id": room_rental.id,
                     "check_out_time": now.isoformat(),
+                    "original_price": str(original_price),
+                    "discount_amount": str(discount_amount),
                     "final_price": str(room_rental.total_price),
-                    "payment": PaymentSerializer(payment).data if payment else None,
-                    "booking": BookingDetailSerializer(booking).data
-                })
+                    "payment": PaymentSerializer(payment).data,
+                    "booking": BookingDetailSerializer(booking).data,
+                    "payment_status": "completed"
+                }
+                
+                return Response(response_data, status=status.HTTP_200_OK)
                 
             except ValidationError as e:
                 logger.error(f"Lỗi ValidationError khi check-out Booking {booking.id}: {str(e)}")
@@ -880,6 +1004,146 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
             except Exception as e:
                 logger.error(f"Lỗi Exception khi check-out Booking {booking.id}: {str(e)}")
                 return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+    @action(detail=True, methods=['get'], url_path='checkout-info')
+    def get_checkout_info(self, request, pk=None):
+        """
+        Lấy thông tin cần thiết cho checkout dialog
+        Bao gồm: RoomRental details, available discount codes, payment methods
+        """
+        try:
+            booking = get_object_or_404(Booking, pk=pk)
+            
+            # Validate booking status
+            if booking.status != BookingStatus.CHECKED_IN:
+                return Response(
+                    {"error": "Booking chưa check-in hoặc đã check-out"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Get RoomRental
+            try:
+                room_rental = RoomRental.objects.get(booking=booking)
+            except RoomRental.DoesNotExist:
+                return Response(
+                    {"error": "Không tìm thấy thông tin thuê phòng"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Check if already checked out
+            if room_rental.actual_check_out_date:
+                return Response(
+                    {"error": "Đã check-out trước đó"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Get available discount codes for this customer
+            now = timezone.now()
+            available_codes = DiscountCode.objects.filter(
+                is_active=True,
+                valid_from__lte=now,
+                valid_to__gte=now
+            ).filter(
+                Q(max_uses__isnull=True) | Q(used_count__lt=F('max_uses'))
+            )
+            
+            applicable_codes = []
+            for code in available_codes:
+                if code.is_applicable_for_user(booking.customer):
+                    applicable_codes.append(code)
+            
+            # Get payment methods
+            payment_methods = [
+                {"value": method[0], "label": method[1]} 
+                for method in Payment.PAYMENT_METHOD_CHOICES
+            ]
+            
+            response_data = {
+                "booking": BookingDetailSerializer(booking).data,
+                "rental": RoomRentalDetailSerializer(room_rental).data,
+                "customer": {
+                    "id": booking.customer.id,
+                    "full_name": booking.customer.full_name,
+                    "customer_type": booking.customer.customer_type,
+                    "email": booking.customer.email,
+                    "phone": booking.customer.phone,
+                },
+                "available_discount_codes": DiscountCodeSerializer(applicable_codes, many=True).data,
+                "payment_methods": payment_methods,
+                "estimated_price": str(room_rental.total_price),
+            }
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error getting checkout info for booking {pk}: {str(e)}")
+            return Response(
+                {"error": "Lỗi khi lấy thông tin checkout"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=True, methods=['post'], url_path='calculate-checkout-price')
+    def calculate_checkout_price(self, request, pk=None):
+        """
+        Tính toán giá cuối cùng với discount code
+        """
+        try:
+            booking = get_object_or_404(Booking, pk=pk)
+            discount_code_id = request.data.get('discount_code_id')
+            
+            # Get RoomRental
+            try:
+                room_rental = RoomRental.objects.get(booking=booking)
+            except RoomRental.DoesNotExist:
+                return Response(
+                    {"error": "Không tìm thấy thông tin thuê phòng"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            original_price = room_rental.total_price
+            discount_amount = Decimal('0')
+            discount_percentage = Decimal('0')
+            discount_code = None
+            
+            # Apply discount if provided
+            if discount_code_id:
+                try:
+                    discount_code = DiscountCode.objects.get(id=discount_code_id)
+                    if not discount_code.is_applicable_for_user(booking.customer):
+                        return Response(
+                            {"error": "Mã giảm giá không áp dụng được cho khách hàng này"}, 
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    
+                    discount_percentage = discount_code.discount_percentage
+                    discount_amount = original_price * (discount_percentage / Decimal('100'))
+                    
+                except DiscountCode.DoesNotExist:
+                    return Response(
+                        {"error": "Mã giảm giá không tồn tại"}, 
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+            
+            final_price = original_price - discount_amount
+            
+            response_data = {
+                "original_price": str(original_price),
+                "discount_code": DiscountCodeSerializer(discount_code).data if discount_code else None,
+                "discount_percentage": str(discount_percentage),
+                "discount_amount": str(discount_amount),
+                "final_price": str(final_price),
+                "currency": "VND"
+            }
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error calculating checkout price for booking {pk}: {str(e)}")
+            return Response(
+                {"error": "Lỗi khi tính toán giá"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=False, methods=['post'], url_path='calculate-price')
     def calculate_price(self, request):
@@ -1198,6 +1462,66 @@ class DiscountCodeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.Retri
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [CanCreateDiscountCode()]
         return [IsAuthenticated()]
+
+    @action(detail=False, methods=['get'], url_path='available')
+    def available_for_user(self, request):
+        """
+        Lấy danh sách discount codes khả dụng cho customer hiện tại
+        Chỉ trả về các codes còn valid và áp dụng được cho customer type của user
+        """
+        try:
+            # Lấy customer từ query params (dành cho staff check-out thay mặt customer)
+            customer_id = request.query_params.get('customer_id')
+            
+            if customer_id:
+                # Staff đang làm checkout cho customer khác
+                if request.user.role not in ['staff', 'admin', 'owner']:
+                    return Response(
+                        {'error': 'Bạn không có quyền xem discount codes của customer khác'}, 
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+                
+                try:
+                    customer = User.objects.get(id=customer_id, role='customer')
+                except User.DoesNotExist:
+                    return Response(
+                        {'error': 'Customer không tồn tại'}, 
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+            else:
+                # User tự xem discount codes của mình
+                customer = request.user
+                if customer.role != 'customer':
+                    return Response(
+                        {'error': 'Chỉ customer mới có thể sử dụng discount codes'}, 
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            
+            # Lấy tất cả discount codes valid
+            now = timezone.now()
+            available_codes = DiscountCode.objects.filter(
+                is_active=True,
+                valid_from__lte=now,
+                valid_to__gte=now
+            ).filter(
+                Q(max_uses__isnull=True) | Q(used_count__lt=F('max_uses'))
+            )
+            
+            # Lọc theo customer type
+            applicable_codes = []
+            for code in available_codes:
+                if code.is_applicable_for_user(customer):
+                    applicable_codes.append(code)
+            
+            serializer = DiscountCodeSerializer(applicable_codes, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error getting available discount codes: {str(e)}")
+            return Response(
+                {'error': 'Lỗi khi lấy danh sách mã giảm giá'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=False, methods=['post'])
     def validate_code(self, request):
@@ -1587,7 +1911,7 @@ def create_payment_url(request):
     vnp_TmnCode = 'GUPETCYO'
     vnp_HashSecret = 'E2G0Y153XRTW37LVRKW8DJ1TGEQ9RK6I'
     vnp_Url = 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html'
-    vnp_ReturnUrl = 'https://event-management-and-online-booking.onrender.com/vnpay/redirect?from=app'
+    vnp_ReturnUrl = 'http://127.0.0.1:8000/vnpay/redirect/'
 
     #Nhận các thông tin đơn hàng từ request
     amount = request.GET.get("amount", "10000")  # đơn vị VND
@@ -1667,52 +1991,171 @@ def vnpay_redirect(request):
         return HttpResponse("Thiếu tham số vnp_ResponseCode.", status=400)
 
     message = vnpay_response_message(vnp_ResponseCode)
+    payment_success = vnp_ResponseCode == '00'
 
     try:
         payment = Payment.objects.get(transaction_id=vnp_TxnRef)
-        if vnp_ResponseCode == '00':
+        if payment_success:
             payment.status = True
             payment.paid_at = timezone.now()
             payment.save()
+            logger.info(f"VNPay payment successful for transaction {vnp_TxnRef}")
         else:
             payment.status = False
             payment.save()
+            logger.warning(f"VNPay payment failed for transaction {vnp_TxnRef}: {message}")
     except Payment.DoesNotExist:
-        pass
+        logger.error(f"Payment not found for transaction {vnp_TxnRef}")
 
-    if from_app:
-        return HttpResponse(f"""
-            <html>
-            <head>
-                <meta charset="utf-8"/>
-                <style>
-                    body {{ background: #f5f6fa; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
-                    .result-box {{ background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); padding: 32px 48px; text-align: center; }}
-                    .result-title {{ color: #2d8cf0; font-size: 3rem; margin-bottom: 12px; }}
-                    .result-message {{ color: #333; font-size: 1.7rem; }}
-                </style>
-                <script>
-                setTimeout(function() {{
-                    if (window.ReactNativeWebView) {{
-                        window.ReactNativeWebView.postMessage(JSON.stringify({{
-                            vnp_ResponseCode: "{vnp_ResponseCode}",
-                            message: "{message}"
-                        }}));
+    # Tạo frontend redirect URL với thông tin booking để không mất context
+    frontend_url = f"http://localhost:5173/staff/bookings?payment_result={'success' if payment_success else 'failed'}&message={urllib.parse.quote(message)}&auto_refresh=true"
+    
+    # Always redirect to frontend
+    return HttpResponse(f"""
+        <!DOCTYPE html>
+        <html lang="vi">
+        <head>
+            <meta charset="utf-8"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Kết quả thanh toán</title>
+            <style>
+                * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+                body {{ 
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    display: flex; 
+                    align-items: center; 
+                    justify-content: center; 
+                    height: 100vh;
+                    margin: 0;
+                }}
+                .container {{
+                    background: white;
+                    border-radius: 20px;
+                    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                    padding: 40px;
+                    text-align: center;
+                    max-width: 500px;
+                    width: 90%;
+                    position: relative;
+                    overflow: hidden;
+                }}
+                .container::before {{
+                    content: '';
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    height: 4px;
+                    background: {'linear-gradient(90deg, #4CAF50, #81C784)' if payment_success else 'linear-gradient(90deg, #f44336, #ef5350)'};
+                }}
+                .icon {{
+                    font-size: 4rem;
+                    margin-bottom: 20px;
+                    animation: bounce 1s ease-in-out;
+                }}
+                .success {{ color: #4CAF50; }}
+                .error {{ color: #f44336; }}
+                .title {{
+                    font-size: 1.8rem;
+                    font-weight: 600;
+                    margin-bottom: 15px;
+                    color: #333;
+                }}
+                .message {{
+                    font-size: 1.1rem;
+                    color: #666;
+                    margin-bottom: 30px;
+                    line-height: 1.5;
+                }}
+                .redirect-info {{
+                    background: #f8f9fa;
+                    border-radius: 10px;
+                    padding: 15px;
+                    color: #6c757d;
+                    font-size: 0.9rem;
+                    margin-top: 20px;
+                }}
+                .loading {{
+                    display: inline-block;
+                    width: 20px;
+                    height: 20px;
+                    border: 2px solid #f3f3f3;
+                    border-top: 2px solid #667eea;
+                    border-radius: 50%;
+                    animation: spin 1s linear infinite;
+                    margin-left: 10px;
+                }}
+                @keyframes bounce {{
+                    0%, 20%, 60%, 100% {{ transform: translateY(0); }}
+                    40% {{ transform: translateY(-10px); }}
+                    80% {{ transform: translateY(-5px); }}
+                }}
+                @keyframes spin {{
+                    0% {{ transform: rotate(0deg); }}
+                    100% {{ transform: rotate(360deg); }}
+                }}
+                .btn {{
+                    background: #667eea;
+                    color: white;
+                    border: none;
+                    padding: 12px 30px;
+                    border-radius: 25px;
+                    font-size: 1rem;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                    text-decoration: none;
+                    display: inline-block;
+                    margin-top: 20px;
+                }}
+                .btn:hover {{
+                    background: #5a67d8;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                }}
+            </style>
+            <script>
+                let countdown = 3;
+                function updateCountdown() {{
+                    document.getElementById('countdown').textContent = countdown;
+                    if (countdown > 0) {{
+                        countdown--;
+                        setTimeout(updateCountdown, 1000);
+                    }} else {{
+                        window.location.href = "{frontend_url}";
                     }}
-                }}, 500);
-                </script>
-            </head>
-            <body>
-                <div class="result-box">
-                    <div class="result-title">Kết quả thanh toán</div>
-                    <div class="result-message">{message}</div>
+                }}
+                document.addEventListener('DOMContentLoaded', function() {{
+                    updateCountdown();
+                }});
+                
+                function redirectNow() {{
+                    window.location.href = "{frontend_url}";
+                }}
+            </script>
+        </head>
+        <body>
+            <div class="container">
+                <div class="icon {'success' if payment_success else 'error'}">
+                    {'🎉' if payment_success else '😔'}
                 </div>
-            </body>
-            </html>
-        """)
-    else:
-        deeplink = f"bemmobile://payment-result?vnp_ResponseCode={vnp_ResponseCode}&message={urllib.parse.quote(message)}"
-        return redirect(deeplink)
+                <div class="title">
+                    {'Thanh toán thành công!' if payment_success else 'Thanh toán thất bại!'}
+                </div>
+                <div class="message">
+                    {message}
+                </div>
+                <div class="redirect-info">
+                    <div>Tự động chuyển hướng sau <span id="countdown">3</span> giây...</div>
+                    <div class="loading"></div>
+                </div>
+                <button class="btn" onclick="redirectNow()">
+                    Quay lại ngay
+                </button>
+            </div>
+        </body>
+        </html>
+    """)
 
 class RoomImageViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView, generics.DestroyAPIView):
     """

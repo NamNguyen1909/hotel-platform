@@ -2,7 +2,7 @@ import random
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from faker import Faker
-from hotelplatform.models import User, RoomType, Room, Booking, RoomRental, Payment, DiscountCode, Notification, RoomImage, BookingStatus
+from hotelplatform.models import User, RoomType, Room, Booking, RoomRental, Payment, DiscountCode, Notification, RoomImage, BookingStatus, CustomerType
 from django.contrib.auth import get_user_model
 from decimal import Decimal
 from datetime import datetime, timedelta
@@ -182,15 +182,30 @@ class Command(BaseCommand):
                 )
 
     def create_discount_codes(self):
+        # Import CustomerType trong function để tránh circular import
+        from hotelplatform.models import CustomerType
+        
+        # Discount codes theo customer type
         codes_data = [
-            ('WELCOME2024', 15, 30, 100),
-            ('VIP20', 20, 60, 50),
-            ('SUMMER10', 10, 90, 200),
-            ('WEEKEND5', 5, 30, 300),
-            ('NEWCUSTOMER', 25, 90, 150),
+            # Codes cho tất cả khách hàng
+            ('WELCOME2024', 15, 30, 100, None),  # None = áp dụng cho tất cả
+            ('SUMMER10', 10, 90, 200, None),
+            ('WEEKEND5', 5, 30, 300, None),
+            
+            # Codes cho regular customers
+            ('REGULAR10', 10, 60, 150, CustomerType.REGULAR),
+            ('FIRSTTIME', 20, 90, 100, CustomerType.REGULAR),
+            
+            # Codes cho VIP customers
+            ('VIP20', 20, 60, 50, CustomerType.VIP),
+            ('VIPEXCLUSIVE', 25, 90, 30, CustomerType.VIP),
+            
+            # Codes cho Super VIP customers
+            ('SUPERVIP30', 30, 60, 20, CustomerType.SUPER_VIP),
+            ('SUPERVIPLUXURY', 35, 90, 15, CustomerType.SUPER_VIP),
         ]
         
-        for code, discount, days, max_uses in codes_data:
+        for code, discount, days, max_uses, user_group in codes_data:
             DiscountCode.objects.get_or_create(
                 code=code,
                 defaults={
@@ -198,8 +213,9 @@ class Command(BaseCommand):
                     'valid_from': timezone.now() - timedelta(days=random.randint(1, 10)),
                     'valid_to': timezone.now() + timedelta(days=days),
                     'max_uses': max_uses,
-                    'used_count': random.randint(0, max_uses // 3),
+                    'used_count': random.randint(0, max_uses // 4),
                     'is_active': True,
+                    'user_group': user_group,
                 }
             )
 

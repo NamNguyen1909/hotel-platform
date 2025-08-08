@@ -22,6 +22,7 @@ import Analytics from './pages/Analytics';
 import RoomDetail from './pages/RoomDetail';
 import BookingForm from './pages/BookingForm';
 import InvoiceDetail from './pages/InvoiceDetail';
+import PaymentResult from './pages/PaymentResult';
 
 const AppContent = () => {
   const location = useLocation();
@@ -55,6 +56,7 @@ const AppContent = () => {
           <Route path="/book" element={<BookingForm />} />
           <Route path="/invoices" element={<Invoices />} />
           <Route path="/invoice/:id" element={<InvoiceDetail />} />
+          <Route path="/payment-result" element={<PaymentResult />} />
         </Routes>
       </Box>
       {shouldShowHeaderFooter && <Footer />}

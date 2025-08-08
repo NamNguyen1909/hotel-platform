@@ -331,16 +331,21 @@ class BookingSerializer(serializers.ModelSerializer):
                 
                 # Kiểm tra xem có phòng nào bị quá tải không (validation linh hoạt)
                 max_total_capacity = sum(room.room_type.max_guests for room in rooms)
-                if guest_count > max_total_capacity * 1.5:
+                max_allowed_guests = int(max_total_capacity * 1.5)
+                
+                if guest_count > max_allowed_guests:
                     raise serializers.ValidationError({
-                        "guest_count": f"Tổng số khách ({guest_count}) vượt quá 150% sức chứa tối đa của các phòng ({max_total_capacity}). Vui lòng chọn thêm phòng hoặc giảm số khách."
+                        "guest_count": f"Tổng số khách ({guest_count}) vượt quá 150% sức chứa tối đa của các phòng (tối đa: {max_allowed_guests} khách cho {max_total_capacity} sức chứa cơ bản). Vui lòng chọn thêm phòng hoặc giảm số khách."
                     })
             else:
-                # Logic cũ cho phòng đơn
+                # Logic linh hoạt cho phòng đơn - cho phép 150% capacity với phụ thu
                 room = rooms[0]
-                if guest_count > room.room_type.max_guests:
+                max_capacity = room.room_type.max_guests
+                max_allowed = int(max_capacity * 1.5)
+                
+                if guest_count > max_allowed:
                     raise serializers.ValidationError({
-                        "guest_count": f"Phòng {room.room_number} chỉ chứa tối đa {room.room_type.max_guests} khách."
+                        "guest_count": f"Phòng {room.room_number} chỉ chứa tối đa {max_allowed} khách (150% của {max_capacity} sức chứa cơ bản). Số khách hiện tại: {guest_count}."
                     })
 
         # Xác thực khách hàng dựa trên vai trò người dùng

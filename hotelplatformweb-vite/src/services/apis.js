@@ -143,6 +143,9 @@ export const endpoints = {
     confirm: (id) => `/bookings/${id}/confirm/`,
     checkin: (id) => `/bookings/${id}/checkin/`,
     checkout: (id) => `/bookings/${id}/checkout/`,
+    checkout: (id) => `/bookings/${id}/checkout/`,
+    checkoutInfo: (id) => `/bookings/${id}/checkout-info/`,
+    calculateCheckoutPrice: (id) => `/bookings/${id}/calculate-checkout-price/`,
     myBookings: '/bookings/my-bookings/',
   },
   
@@ -188,6 +191,7 @@ export const endpoints = {
     delete: (id) => `/discount-codes/${id}/`,
     validate: '/discount-codes/validate/',
     apply: '/discount-codes/apply/',
+    available: '/discount-codes/available/',
   },
   
   // Notification endpoints

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
   Container,
@@ -29,6 +29,7 @@ import {
 import api, { endpoints } from '../services/apis';
 import authUtils from '../services/auth';
 import { useBookingsPolling } from '../hooks/useSmartPolling';
+import CheckoutDialog from '../components/CheckoutDialog';
 
 // Format giá tiền
 const formatPrice = (price) => {
@@ -57,6 +58,7 @@ const statusConfig = {
 
 const Bookings = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -78,6 +80,38 @@ const Bookings = () => {
     booking: null,
     actualGuestCount: 0,
   });
+  const [checkoutDialog, setCheckoutDialog] = useState({
+    open: false,
+    bookingId: null,
+  });
+
+  // Check payment result từ URL params (VNPay redirect)
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const paymentResult = searchParams.get('payment_result');
+    const message = searchParams.get('message');
+    const autoRefresh = searchParams.get('auto_refresh');
+    
+    if (paymentResult || autoRefresh) {
+      // Nếu có auto_refresh, refresh token để duy trì session
+      if (autoRefresh === 'true' && authUtils.isAuthenticated()) {
+        authUtils.refreshToken().catch(error => {
+          console.warn('Failed to refresh token after payment:', error);
+          // Không navigate về login ngay, để user thấy kết quả thanh toán trước
+        });
+      }
+      
+      // Clear URL params ngay lập tức để tránh loop
+      const newUrl = location.pathname;
+      window.history.replaceState({}, '', newUrl);
+      
+      // Force refresh data sau khi clear URL
+      if (paymentResult || autoRefresh) {
+        // Trigger a fresh data fetch
+        setPaginationModel(prev => ({ ...prev, page: prev.page }));
+      }
+    }
+  }, [location]);
 
   // Fetch bookings từ API
   useEffect(() => {
@@ -322,20 +356,37 @@ const Bookings = () => {
     }
   };
 
-  // Xử lý check-out
+  // Xử lý check-out với enhanced checkout dialog
   const handleCheckOut = async (bookingId) => {
-    try {
-      // Sử dụng booking checkout endpoint thay vì rental checkout
-      await api.post(endpoints.bookings.checkout(bookingId));
-      setBookings((prev) =>
-        prev.map((booking) =>
-          booking.id === bookingId ? { ...booking, status: 'checked_out' } : booking
-        )
-      );
-      setError(null);
-    } catch (err) {
-      setError(`Không thể thực hiện check-out: ${err.response?.data?.error || err.message}`);
-    }
+    // Mở checkout dialog thay vì gọi API trực tiếp
+    setCheckoutDialog({
+      open: true,
+      bookingId: bookingId,
+    });
+  };
+
+  // Xử lý khi checkout thành công
+  const handleCheckoutSuccess = (checkoutData) => {
+    // Cập nhật booking trong list
+    setBookings((prev) =>
+      prev.map((booking) =>
+        booking.id === checkoutData.booking_id 
+          ? { ...booking, status: 'checked_out' } 
+          : booking
+      )
+    );
+    setError(null);
+    
+    // Hiển thị thông báo thành công
+    console.log('Checkout thành công:', checkoutData);
+  };
+
+  // Đóng checkout dialog
+  const closeCheckoutDialog = () => {
+    setCheckoutDialog({
+      open: false,
+      bookingId: null,
+    });
   };
 
   // Xử lý hủy booking
@@ -652,6 +703,14 @@ const Bookings = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Enhanced Checkout Dialog với full checkout processing */}
+      <CheckoutDialog
+        open={checkoutDialog.open}
+        onClose={closeCheckoutDialog}
+        bookingId={checkoutDialog.bookingId}
+        onCheckoutSuccess={handleCheckoutSuccess}
+      />
     </Container>
   );
 };
