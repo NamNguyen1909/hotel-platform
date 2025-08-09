@@ -423,12 +423,14 @@ class RoomRental(models.Model):
             total_max_capacity = sum(room.room_type.max_guests for room in self.rooms.all())
             
             # VALIDATION: Nếu vượt quá 150% capacity tổng → chặn hoàn toàn
-            if total_max_capacity > 0 and self.guest_count > total_max_capacity * 1.5:
-                raise ValidationError(
-                    f"Số khách ({self.guest_count}) vượt quá 150% sức chứa tổng của các phòng "
-                    f"(tối đa: {int(total_max_capacity * 1.5)} khách cho {total_max_capacity} sức chứa cơ bản). "
-                    f"Vui lòng kiểm tra lại."
-                )
+            if total_max_capacity > 0:
+                max_allowed_guests = int(total_max_capacity * 1.5)
+                if self.guest_count > max_allowed_guests:
+                    raise ValidationError(
+                        f"Số khách ({self.guest_count}) vượt quá 150% sức chứa tổng của các phòng "
+                        f"(tối đa: {max_allowed_guests} khách cho {total_max_capacity} sức chứa cơ bản). "
+                        f"Vui lòng kiểm tra lại."
+                    )
             
             # INFO: Nếu vượt capacity → sẽ có phụ thu (không chặn)
             for room in self.rooms.all():
@@ -577,6 +579,7 @@ class Payment(models.Model):
 #         return f"Đánh giá của {self.customer} - {self.rating} sao"
 
 # Mã giảm giá
+# Mã giảm giá
 class DiscountCode(models.Model):
     code = models.CharField(max_length=50, unique=True, db_index=True)
     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))])
@@ -585,6 +588,7 @@ class DiscountCode(models.Model):
     max_uses = models.PositiveIntegerField(null=True, blank=True)
     used_count = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
+    user_group = models.CharField(max_length=10, choices=CustomerType.choices, null=True, blank=True, help_text="Nhóm khách hàng áp dụng. Để trống nếu áp dụng cho tất cả.")
 
     class Meta:
         constraints = [
@@ -595,6 +599,7 @@ class DiscountCode(models.Model):
         ]
         indexes = [
             models.Index(fields=['code', 'is_active']),
+            models.Index(fields=['user_group', 'is_active']),
         ]
 
     def __str__(self):
@@ -605,6 +610,18 @@ class DiscountCode(models.Model):
         if self.valid_from <= now <= self.valid_to and (self.max_uses is None or self.used_count < self.max_uses):
             return True
         return False
+    
+    def is_applicable_for_user(self, user):
+        """Kiểm tra xem discount code có áp dụng được cho user này không"""
+        if not self.is_valid():
+            return False
+        
+        # Nếu user_group không được set, áp dụng cho tất cả
+        if not self.user_group:
+            return True
+            
+        # Kiểm tra customer_type của user
+        return user.customer_type == self.user_group
 
 # Thông báo
 class Notification(models.Model):
