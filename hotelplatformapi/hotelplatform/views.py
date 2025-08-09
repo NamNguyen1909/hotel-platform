@@ -875,134 +875,136 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         
         with transaction.atomic():
             try:
-                # Step 1: Update booking status to CHECKED_OUT
-                logger.info(f"Step 1: Updating booking status to CHECKED_OUT")
-                booking.status = BookingStatus.CHECKED_OUT
-                booking.save(update_fields=['status', 'updated_at'])
-                logger.info(f"Booking {booking.id} status updated to CHECKED_OUT")
-                
-                # Step 2: Update RoomRental with actual checkout time and calculate final price
-                logger.info(f"Step 2: Setting actual_check_out_date and calculating final price")
-                room_rental.actual_check_out_date = now
-                
-                # Calculate discount if applicable
+                # Calculate discount if applicable BEFORE creating payment
                 original_price = room_rental.total_price
                 discount_amount = Decimal('0')
+                final_price = original_price
                 
                 if discount_code:
                     # Tính discount và làm tròn đến 2 chữ số thập phân
                     discount_amount = (original_price * (discount_code.discount_percentage / Decimal('100'))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                    room_rental.total_price = (original_price - discount_amount).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                    
-                    # Update discount code usage
-                    discount_code.used_count = F('used_count') + 1
-                    discount_code.save(update_fields=['used_count'])
+                    final_price = (original_price - discount_amount).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
                     logger.info(f"Applied discount: {discount_code.code} - {discount_amount}")
                 
-                room_rental.save(update_fields=['actual_check_out_date', 'total_price'])
-                logger.info(f"RoomRental {room_rental.id} updated with final price: {room_rental.total_price}")
-                
-                # Step 3: Create Payment record manually with enhanced details
+                # Step 1: Create Payment record FIRST (before checkout)
                 import uuid
                 payment = Payment.objects.create(
                     rental=room_rental,
                     customer=booking.customer,
-                    amount=room_rental.total_price,
+                    amount=final_price,
                     payment_method=payment_method,
-                    status=True if payment_method == 'cash' else False,  # Cash payments are immediately confirmed
+                    status=False,  # Always start as pending, will be updated based on payment method
                     transaction_id=f"PAY_{now.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}",
                     discount_code=discount_code,
                 )
-                logger.info(f"Created Payment {payment.id} with method {payment_method}")
+                logger.info(f"Created Payment {payment.id} with method {payment_method}, amount {final_price}")
                 
-                # Step 4: Room status will be updated automatically by Booking signals
-                # Signal will change room status from 'occupied' to 'available'
+                # Step 2: Handle different payment methods
+                if payment_method == 'cash':
+                    # Cash payment: Complete checkout immediately
+                    payment.status = True
+                    payment.paid_at = now
+                    payment.save(update_fields=['status', 'paid_at'])
+                    
+                    # Complete checkout process
+                    booking.status = BookingStatus.CHECKED_OUT
+                    booking.save(update_fields=['status', 'updated_at'])
+                    
+                    room_rental.actual_check_out_date = now
+                    room_rental.total_price = final_price
+                    room_rental.save(update_fields=['actual_check_out_date', 'total_price'])
+                    
+                    # Update discount code usage
+                    if discount_code:
+                        # Use update() to avoid F() expression issues in object
+                        DiscountCode.objects.filter(id=discount_code.id).update(
+                            used_count=F('used_count') + 1
+                        )
+                        # Refresh the object to get updated value
+                        discount_code.refresh_from_db()
+                    
+                    logger.info(f"Cash payment completed, checkout successful for Booking {booking.id}")
+                    
+                    response_data = {
+                        "message": "Check-out và thanh toán thành công", 
+                        "booking_id": booking.id,
+                        "rental_id": room_rental.id,
+                        "check_out_time": now.isoformat(),
+                        "original_price": str(original_price),
+                        "discount_amount": str(discount_amount),
+                        "final_price": str(final_price),
+                        "payment": PaymentSerializer(payment).data,
+                        "booking": BookingDetailSerializer(booking).data,
+                        "payment_status": "completed"
+                    }
+                    return Response(response_data, status=status.HTTP_200_OK)
                 
-                # Step 5: Handle VNPay integration if needed
-                if payment_method == 'vnpay':
-                    # Sử dụng hàm create_payment_url đã có sẵn
+                elif payment_method == 'vnpay':
+                    # VNPay payment: Create payment URL, checkout will be completed in VNPay callback
                     try:
-                        # Tạo mock request với amount parameter để gọi create_payment_url
+                        # Update payment transaction_id to be used with VNPay
+                        vnpay_txn_ref = f"VNPAY_{now.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+                        payment.transaction_id = vnpay_txn_ref
+                        payment.save(update_fields=['transaction_id'])
+                        
+                        # Tạo VNPay URL
                         from django.http import QueryDict
                         mock_request = type('MockRequest', (), {
-                            'GET': QueryDict(f'amount={room_rental.total_price}'),
+                            'GET': QueryDict(f'amount={final_price}&txn_ref={vnpay_txn_ref}'),
                             'META': request.META
                         })()
                         
-                        # Gọi hàm create_payment_url đã có sẵn
                         vnpay_response = create_payment_url(mock_request)
                         vnpay_data = vnpay_response.content.decode('utf-8')
                         import json
                         vnpay_json = json.loads(vnpay_data)
                         vnpay_url = vnpay_json.get('payment_url')
                         
-                        # Update payment với pending status
-                        payment.status = False  # Pending payment
-                        payment.save(update_fields=['status'])
-                        logger.info(f"VNPay payment URL created for booking {booking.id}")
+                        logger.info(f"VNPay payment URL created for booking {booking.id}, pending checkout")
                         
-                        # Return response với VNPay URL
+                        # Return response với VNPay URL - CHƯA CHECKOUT
                         response_data = {
-                            "message": "Check-out thành công. Chuyển hướng đến VNPay để thanh toán.", 
+                            "message": "Payment tạo thành công. Vui lòng thanh toán để hoàn tất checkout.", 
                             "booking_id": booking.id,
                             "rental_id": room_rental.id,
-                            "check_out_time": now.isoformat(),
                             "original_price": str(original_price),
                             "discount_amount": str(discount_amount),
-                            "final_price": str(room_rental.total_price),
+                            "final_price": str(final_price),
                             "payment": PaymentSerializer(payment).data,
                             "booking": BookingDetailSerializer(booking).data,
-                            "payment_status": "pending",
+                            "payment_status": "pending_payment",
                             "vnpay_url": vnpay_url,
-                            "payment_instructions": "Vui lòng thanh toán qua VNPay để hoàn tất checkout."
+                            "payment_instructions": "Vui lòng thanh toán qua VNPay. Checkout sẽ hoàn tất sau khi thanh toán thành công."
                         }
                         return Response(response_data, status=status.HTTP_200_OK)
                         
                     except Exception as vnpay_error:
                         logger.error(f"VNPay integration error: {str(vnpay_error)}")
-                        # Fallback to pending payment
-                        payment.status = False
-                        payment.save(update_fields=['status'])
-                        
-                        response_data = {
-                            "message": "Check-out thành công. VNPay không khả dụng, vui lòng thanh toán thủ công.", 
-                            "booking_id": booking.id,
-                            "rental_id": room_rental.id,
-                            "check_out_time": now.isoformat(),
-                            "original_price": str(original_price),
-                            "discount_amount": str(discount_amount),
-                            "final_price": str(room_rental.total_price),
-                            "payment": PaymentSerializer(payment).data,
-                            "booking": BookingDetailSerializer(booking).data,
-                            "payment_status": "pending",
-                            "payment_instructions": "VNPay không khả dụng. Vui lòng liên hệ lễ tân để thanh toán."
-                        }
-                        return Response(response_data, status=status.HTTP_200_OK)
+                        # Delete the payment since VNPay failed
+                        payment.delete()
+                        return Response({
+                            "error": f"Lỗi tạo thanh toán VNPay: {str(vnpay_error)}"
+                        }, status=status.HTTP_400_BAD_REQUEST)
                 
-                # HOÀN THÀNH - Trả về response thành công cho cash/stripe payments
-                logger.info(f"Check-out thành công cho Booking {booking.id}")
-                logger.info(f"Rooms will be set to available: {[room.room_number for room in booking.rooms.all()]}")
+                else:  # stripe or other methods
+                    # For future implementation - keep payment pending until confirmed
+                    logger.info(f"Payment method {payment_method} created, awaiting external confirmation")
+                    
+                    response_data = {
+                        "message": f"Payment {payment_method} tạo thành công. Chờ xác nhận thanh toán.", 
+                        "booking_id": booking.id,
+                        "rental_id": room_rental.id,
+                        "original_price": str(original_price),
+                        "discount_amount": str(discount_amount),
+                        "final_price": str(final_price),
+                        "payment": PaymentSerializer(payment).data,
+                        "booking": BookingDetailSerializer(booking).data,
+                        "payment_status": "pending_payment"
+                    }
+                    return Response(response_data, status=status.HTTP_200_OK)
                 
-                response_data = {
-                    "message": "Check-out thành công", 
-                    "booking_id": booking.id,
-                    "rental_id": room_rental.id,
-                    "check_out_time": now.isoformat(),
-                    "original_price": str(original_price),
-                    "discount_amount": str(discount_amount),
-                    "final_price": str(room_rental.total_price),
-                    "payment": PaymentSerializer(payment).data,
-                    "booking": BookingDetailSerializer(booking).data,
-                    "payment_status": "completed"
-                }
-                
-                return Response(response_data, status=status.HTTP_200_OK)
-                
-            except ValidationError as e:
-                logger.error(f"Lỗi ValidationError khi check-out Booking {booking.id}: {str(e)}")
-                return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
             except Exception as e:
-                logger.error(f"Lỗi Exception khi check-out Booking {booking.id}: {str(e)}")
+                logger.error(f"Lỗi Exception khi checkout Booking {booking.id}: {str(e)}")
                 return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -1915,9 +1917,13 @@ def create_payment_url(request):
 
     #Nhận các thông tin đơn hàng từ request
     amount = request.GET.get("amount", "10000")  # đơn vị VND
+    txn_ref = request.GET.get("txn_ref")  # Transaction reference từ checkout
     order_type = "other"
     #Tạo mã giao dịch và ngày giờ
-    order_id = datetime.now(tz).strftime('%H%M%S')
+    if txn_ref:
+        order_id = txn_ref
+    else:
+        order_id = datetime.now(tz).strftime('%H%M%S')
     create_date = datetime.now(tz).strftime('%Y%m%d%H%M%S')
     ip_address = request.META.get('REMOTE_ADDR')
 
@@ -1999,6 +2005,40 @@ def vnpay_redirect(request):
             payment.status = True
             payment.paid_at = timezone.now()
             payment.save()
+            
+            # HOÀN TẤT CHECKOUT khi VNPay thanh toán thành công
+            try:
+                rental = payment.rental
+                booking = rental.booking
+                
+                # Chỉ checkout nếu booking chưa checkout
+                if booking.status != BookingStatus.CHECKED_OUT:
+                    with transaction.atomic():
+                        # Complete checkout process
+                        booking.status = BookingStatus.CHECKED_OUT
+                        booking.save(update_fields=['status', 'updated_at'])
+                        
+                        # Update room rental
+                        rental.actual_check_out_date = payment.paid_at
+                        rental.total_price = payment.amount
+                        rental.save(update_fields=['actual_check_out_date', 'total_price'])
+                        
+                        # Update discount code usage if applicable
+                        if payment.discount_code:
+                            # Use update() to avoid F() expression issues in object
+                            DiscountCode.objects.filter(id=payment.discount_code.id).update(
+                                used_count=F('used_count') + 1
+                            )
+                            # Refresh the object to get updated value
+                            payment.discount_code.refresh_from_db()
+                        
+                        logger.info(f"VNPay payment successful and checkout completed for booking {booking.id}")
+                else:
+                    logger.info(f"VNPay payment successful for already checked-out booking {booking.id}")
+                    
+            except Exception as checkout_error:
+                logger.error(f"Failed to complete checkout after VNPay payment {vnp_TxnRef}: {checkout_error}")
+            
             logger.info(f"VNPay payment successful for transaction {vnp_TxnRef}")
         else:
             payment.status = False
