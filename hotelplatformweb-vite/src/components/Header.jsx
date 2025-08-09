@@ -45,6 +45,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/apis';
 import authUtils from '../services/auth';
 import { useNotificationsPolling } from '../hooks/useSmartPolling';
+import NotificationDropdown from './NotificationDropdown';
 
 // Định nghĩa menu items theo role
 const menuItemsByRole = {
@@ -159,19 +160,6 @@ const Header = () => {
       console.error('Error logging out:', error);
     }
     handleCloseUserMenu();
-  };
-
-  const handleNotificationsClick = async () => {
-    if (authUtils.isAuthenticated()) {
-      try {
-        await api.post('/notifications/mark-all-read/');
-        setNotifications(0);
-        handleNavigation('/notifications');
-      } catch (error) {
-        console.error('Error marking notifications as read:', error);
-        handleNavigation('/notifications');
-      }
-    }
   };
 
   const menuItems = menuItemsByRole[userRole] || menuItemsByRole.guest;
@@ -297,18 +285,10 @@ const Header = () => {
 
             <Box sx={{ flexGrow: 0, display: 'flex', alignItems: 'center' }}>
               {authUtils.isAuthenticated() && (
-                <Tooltip title="Thông báo">
-                  <IconButton
-                    size="large"
-                    color="inherit"
-                    onClick={handleNotificationsClick}
-                    sx={{ mr: 1 }}
-                  >
-                    <Badge badgeContent={notifications} color="error">
-                      <Notifications />
-                    </Badge>
-                  </IconButton>
-                </Tooltip>
+                <NotificationDropdown 
+                  notificationCount={notifications}
+                  onNotificationUpdate={setNotifications}
+                />
               )}
 
               <Tooltip title="Tài khoản">

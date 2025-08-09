@@ -201,8 +201,8 @@ export const endpoints = {
     create: '/notifications/',
     update: (id) => `/notifications/${id}/`,
     delete: (id) => `/notifications/${id}/`,
-    markRead: (id) => `/notifications/${id}/mark-read/`,
-    markAllRead: '/notifications/mark-all-read/',
+    markRead: (id) => `/notifications/${id}/mark_as_read/`,
+    markAllRead: '/notifications/mark_all_as_read/',
     unread: '/notifications/unread/',
   },
   
@@ -280,6 +280,29 @@ export const roomImageHelpers = {
   updateImage: async (imageId, data) => {
     return api.put(endpoints.roomImages.update(imageId), data);
   }
+};
+
+// Helper functions for notification management
+export const fetchNotifications = async (page = 1, limit = 10) => {
+  const response = await api.get(`${endpoints.notifications.list}?page=${page}&limit=${limit}`);
+  return response.data;
+};
+
+export const markNotificationAsRead = async (notificationId) => {
+  return api.post(endpoints.notifications.markRead(notificationId));
+};
+
+export const deleteNotification = async (notificationId) => {
+  return api.delete(endpoints.notifications.delete(notificationId));
+};
+
+export const markAllAsRead = async () => {
+  return api.post(endpoints.notifications.markAllRead);
+};
+
+export const getUnreadNotifications = async () => {
+  const response = await api.get(endpoints.notifications.unread);
+  return response.data;
 };
 
 export default api;

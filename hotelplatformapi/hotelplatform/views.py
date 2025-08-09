@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import hashlib
 import hmac
+import pytz
 from django.shortcuts import redirect, render
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -179,6 +180,19 @@ class UserViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
         serializer = UserSerializer(request.user, data=request.data, partial=True)
         if serializer.is_valid():
             user = serializer.save()
+            
+            # Tạo thông báo cập nhật profile thành công
+            try:
+                Notification.objects.create(
+                    user=user,
+                    notification_type='booking_confirmation',
+                    title='Cập nhật thông tin thành công',
+                    message='Thông tin cá nhân của bạn đã được cập nhật thành công.'
+                )
+                logger.info(f"Created profile update notification for user {user.id}")
+            except Exception as notification_error:
+                logger.error(f"Failed to create profile update notification: {notification_error}")
+            
             return Response(UserDetailSerializer(user).data)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -516,7 +530,6 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         return [IsAuthenticated()]
 
     def get_queryset(self):
-        from .permissions import has_permission
         queryset = Booking.objects.select_related('customer').prefetch_related('rooms').all()
 
         # Nếu là customer, chỉ trả về booking của họ
@@ -669,22 +682,41 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
             logger.warning(f"Booking {pk} status is {booking.status}, not CONFIRMED")
             return Response({"error": "Booking chưa được xác nhận hoặc đã check-in"}, status=status.HTTP_400_BAD_REQUEST)
 
-        #  TIME VALIDATION - Enhanced for development flexibility
-        now = timezone.now()
-        logger.info(f"Current time: {now}, Booking check-in time: {booking.check_in_date}")
+        #  TIME VALIDATION - Local timezone-aware comparison for accurate check-in
+        from django.utils import timezone
+        import pytz
         
-        # Chuyển đổi thời gian để so sánh đúng timezone
-        current_date = now.date()
-        checkin_date = booking.check_in_date.date()
+        # Get current time in both UTC and local timezone (UTC+7)
+        now_utc = timezone.now()
+        vietnam_tz = pytz.timezone('Asia/Ho_Chi_Minh')  # UTC+7
+        now_local = now_utc.astimezone(vietnam_tz)
         
-        logger.info(f"Current date: {current_date}, Check-in date: {checkin_date}")
+        # Convert booking time to local timezone for fair comparison
+        booking_local = booking.check_in_date.astimezone(vietnam_tz)
         
-        # Cho phép check-in trong cùng ngày hoặc sau ngày check-in
-        if current_date < checkin_date:
-            logger.warning(f"Too early for check-in: {current_date} < {checkin_date}")
+        logger.info(f"Current time (UTC): {now_utc}")
+        logger.info(f"Current time (Local UTC+7): {now_local}")
+        logger.info(f"Booking check-in time (Local UTC+7): {booking_local}")
+        
+        # Compare dates in local timezone - this is the accurate way
+        current_date_local = now_local.date()
+        checkin_date_local = booking_local.date()
+        
+        logger.info(f"Date comparison (Local timezone) - Current: {current_date_local}, Check-in scheduled: {checkin_date_local}")
+        
+        # STRICT CHECK-IN POLICY: Only allow check-in on or after the scheduled date
+        if current_date_local < checkin_date_local:
+            logger.warning(f"❌ Check-in denied: Current date {current_date_local} is before check-in date {checkin_date_local}")
             return Response({
-                "error": f"Chưa đến ngày check-in. Ngày check-in: {checkin_date}, Ngày hiện tại: {current_date}"
+                "error": f"Chưa đến ngày check-in. Ngày check-in: {checkin_date_local}, Ngày hiện tại: {current_date_local}"
             }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Log success cases
+        if current_date_local == checkin_date_local:
+            logger.info(f"✅ Check-in approved: Checking in on scheduled date {checkin_date_local}")
+        else:
+            days_late = (current_date_local - checkin_date_local).days
+            logger.info(f"✅ Late check-in approved: Checking in {days_late} days after scheduled date")
 
         #  ROOM STATUS VALIDATION - Ensure all rooms are available for check-in
         logger.info(f"Checking room statuses for booking {pk}")
@@ -770,7 +802,7 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
                 room_rental = RoomRental(
                     customer=booking.customer,
                     booking=booking,
-                    check_in_date=now,
+                    check_in_date=now_utc,  # Use UTC time for database
                     check_out_date=booking.check_out_date,
                     guest_count=booking.guest_count,
                     total_price=actual_total_price  # Sử dụng giá đã tính phụ thu
@@ -782,6 +814,18 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
                 logger.info(f"Step 3: Setting rooms for RoomRental")
                 room_rental.rooms.set(booking.rooms.all())
                 logger.info(f"Rooms set for RoomRental {room_rental.id}: {[room.room_number for room in booking.rooms.all()]}")
+                
+                # Step 4: Tạo thông báo check-in thành công
+                try:
+                    Notification.objects.create(
+                        user=booking.customer,
+                        notification_type='booking_confirmation',
+                        title='Check-in thành công',
+                        message=f'Bạn đã check-in thành công phòng {", ".join([room.room_number for room in booking.rooms.all()])}. Chúc bạn có kỳ nghỉ vui vẻ!'
+                    )
+                    logger.info(f"Created check-in notification for booking {booking.id}")
+                except Exception as notification_error:
+                    logger.error(f"Failed to create check-in notification: {notification_error}")
                 
                 # HOÀN THÀNH - Trả về response thành công
                 logger.info(f"Check-in thành công cho Booking {booking.id}, phòng: {[room.room_number for room in booking.rooms.all()]}")
@@ -922,6 +966,18 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
                         )
                         # Refresh the object to get updated value
                         discount_code.refresh_from_db()
+                    
+                    # Tạo thông báo check-out thành công
+                    try:
+                        Notification.objects.create(
+                            user=booking.customer,
+                            notification_type='booking_confirmation',
+                            title='Check-out thành công',
+                            message=f'Bạn đã check-out thành công khỏi phòng {", ".join([room.room_number for room in booking.rooms.all()])}. Cảm ơn bạn đã sử dụng dịch vụ của chúng tôi!'
+                        )
+                        logger.info(f"Created check-out notification for booking {booking.id}")
+                    except Exception as notification_error:
+                        logger.error(f"Failed to create check-out notification: {notification_error}")
                     
                     logger.info(f"Cash payment completed, checkout successful for Booking {booking.id}")
                     
@@ -1369,27 +1425,6 @@ class RoomRentalViewSet(viewsets.ViewSet, generics.ListAPIView, generics.Retriev
                 return Response(RoomRentalDetailSerializer(rental).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=True, methods=['post'])
-    def checkout(self, request, pk=None):
-        """Check-out khách thực tế tại quầy (chỉ staff)"""
-        rental = get_object_or_404(RoomRental, pk=pk)
-        try:
-            with transaction.atomic():
-                # Ghi nhận thời gian trả phòng thực tế
-                rental.actual_check_out_date = timezone.now()  # Ví dụ: 21:00 05/08/2025
-                rental.save()  # Gọi save() để serializer xử lý logic check-out
-
-                payment = rental.payments.last()  # Lấy payment vừa tạo
-
-                return Response({
-                    "message": "Check-out thực tế thành công",
-                    "rental": RoomRentalDetailSerializer(rental).data,
-                    "total_price": str(rental.total_price),
-                    "payment": PaymentSerializer(payment).data if payment else None
-                })
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 class PaymentViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
     """
     ViewSet quản lý Payment
@@ -1552,9 +1587,33 @@ class NotificationViewSet(viewsets.ViewSet, generics.ListAPIView, generics.Retri
     search_fields = ['title', 'message']
     ordering_fields = ['created_at', 'is_read']
     ordering = ['-created_at']
+    pagination_class = ItemPaginator
 
     def get_queryset(self):
         return Notification.objects.filter(user=self.request.user)
+
+    def list(self, request, *args, **kwargs):
+        """Override list để thêm unread_count vào response"""
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            unread_count = self.get_queryset().filter(is_read=False).count()
+            
+            # Lấy paginated response
+            response = self.get_paginated_response(serializer.data)
+            # Thêm unread_count
+            response.data['unread_count'] = unread_count
+            return response
+
+        serializer = self.get_serializer(queryset, many=True)
+        unread_count = self.get_queryset().filter(is_read=False).count()
+        
+        return Response({
+            'results': serializer.data,
+            'unread_count': unread_count
+        })
 
     def create(self, request):
         """Tạo notification mới (chỉ admin/owner)"""
@@ -1590,6 +1649,12 @@ class NotificationViewSet(viewsets.ViewSet, generics.ListAPIView, generics.Retri
         )
         
         return Response({"message": "Đã đánh dấu tất cả thông báo đã đọc"})
+
+    @action(detail=False, methods=['get'])
+    def unread(self, request):
+        """Lấy số lượng thông báo chưa đọc"""
+        unread_count = Notification.objects.filter(user=request.user, is_read=False).count()
+        return Response({"unread_count": unread_count})
 
 # ================================ QR CODE & CHECK-IN ================================
 
@@ -1942,9 +2007,8 @@ def create_payment_url(request):
         "vnp_IpAddr": ip_address,
         "vnp_CreateDate": create_date
     }
-    print("Input data before signing:", input_data)
+    
     #Tạo chữ ký (vnp_SecureHash) để đảm bảo dữ liệu không bị giả mạo
-    sorted_data = sorted(input_data.items())
     query_string = '&'.join(
         f"{k}={vnpay_encode(v)}"
         for k, v in sorted(input_data.items())
@@ -2031,6 +2095,18 @@ def vnpay_redirect(request):
                             )
                             # Refresh the object to get updated value
                             payment.discount_code.refresh_from_db()
+                        
+                        # Tạo thông báo VNPay thanh toán và check-out thành công
+                        try:
+                            Notification.objects.create(
+                                user=booking.customer,
+                                notification_type='booking_confirmation',
+                                title='Thanh toán VNPay thành công',
+                                message=f'Thanh toán VNPay thành công và check-out hoàn tất khỏi phòng {", ".join([room.room_number for room in booking.rooms.all()])}. Số tiền: {payment.amount:,.0f} VNĐ'
+                            )
+                            logger.info(f"Created VNPay success notification for booking {booking.id}")
+                        except Exception as notification_error:
+                            logger.error(f"Failed to create VNPay success notification: {notification_error}")
                         
                         logger.info(f"VNPay payment successful and checkout completed for booking {booking.id}")
                 else:
