@@ -50,9 +50,9 @@ services:
     rootDir: hotelplatformweb-vite
     buildCommand: |
       cd ..
-      npm install
+      NODE_ENV=development npm install
       cd hotelplatformweb-vite
-      npm install
+      NODE_ENV=development npm install
       echo "=== Checking vite installation ==="
       ls -la node_modules/.bin/ | grep vite || echo "vite not found in .bin"
       which vite || echo "vite not in PATH"
