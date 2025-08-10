@@ -43,13 +43,14 @@ services:
     healthCheckPath: /health/
     autoDeploy: true
 
-  # React Frontend - Express.js serving static files  
+  # React Frontend - Node.js Web Service
   - type: web
     name: hotel-platform-web
     env: node
     rootDir: hotelplatformweb-vite
     buildCommand: npm ci && npm run build
-    startCommand: node server.js
+    startCommand: npx serve dist -s -p $PORT
+    plan: free
     envVars:
       - key: NODE_ENV
         value: production
