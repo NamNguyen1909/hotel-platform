@@ -1,0 +1,34 @@
+{
+  "name": "hotel-platform",
+  "version": "1.0.0",
+  "description": "Hotel Management Platform with Django Backend and React Frontend",
+  "private": true,
+  "workspaces": [
+    "hotelplatformweb-vite"
+  ],
+  "scripts": {
+    "dev:backend": "cd hotelplatformapi && python manage.py runserver",
+    "dev:frontend": "cd hotelplatformweb-vite && npm run dev",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "build:frontend": "cd hotelplatformweb-vite && npm run build",
+    "install:backend": "cd hotelplatformapi && pip install -r requirements.txt",
+    "install:frontend": "cd hotelplatformweb-vite && npm install",
+    "install:all": "npm run install:backend && npm run install:frontend",
+    "migrate": "cd hotelplatformapi && python manage.py migrate",
+    "seed": "cd hotelplatformapi && python manage.py seed",
+    "collectstatic": "cd hotelplatformapi && python manage.py collectstatic --noinput"
+  },
+  "keywords": [
+    "hotel",
+    "management",
+    "booking",
+    "django",
+    "react",
+    "mui"
+  ],
+  "author": "Nam Nguyen",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

@@ -13,4 +13,22 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    port: process.env.PORT || 3000,
+    host: '0.0.0.0',
+  },
+  build: {
+    outDir: 'dist',
+    assetsDir: 'static',
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          mui: ['@mui/material', '@mui/icons-material'],
+          router: ['react-router-dom'],
+        },
+      },
+    },
+  },
 });

@@ -35,3 +35,7 @@ typing_extensions==4.14.0
 tzdata==2025.2
 uritemplate==4.2.0
 urllib3==2.5.0
+gunicorn==23.0.0
+dj-database-url==2.3.0
+psycopg2-binary==2.9.10
+whitenoise==6.8.2
