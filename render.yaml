@@ -43,16 +43,15 @@ services:
     healthCheckPath: /health/
     autoDeploy: true
 
-  # React Frontend
+  # React Frontend - Static Site
   - type: static
     name: hotel-platform-web
     rootDir: hotelplatformweb-vite
-    buildCommand: npm install --production=false && npm run build
+    buildCommand: npm ci && npm run build
     staticPublishPath: dist
     envVars:
       - key: NODE_ENV
         value: production
       - key: VITE_API_BASE_URL
         value: https://hotel-platform-api.onrender.com
-    pullRequestPreviewsEnabled: false
     autoDeploy: true
