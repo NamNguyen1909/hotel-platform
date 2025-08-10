@@ -1,6 +1,10 @@
 // Cấu hình Axios
 import axios from 'axios';
 
+// Debug: Log API base URL
+console.log('🔗 API Base URL:', import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/');
+console.log('🌍 Environment:', import.meta.env.NODE_ENV);
+
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/', // Base URL của Django API
   headers: {
@@ -36,7 +40,7 @@ api.interceptors.response.use(
       const refreshToken = localStorage.getItem('refresh_token');
       if (refreshToken) {
         try {
-          const response = await axios.post(`http://127.0.0.1:8000/api/auth/token/refresh/`, {
+          const response = await axios.post(`${import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'}/api/auth/token/refresh/`, {
             refresh: refreshToken
           });
           

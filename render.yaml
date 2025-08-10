@@ -8,7 +8,7 @@ services:
   # Django Backend API
   - type: web
     name: hotel-platform-api
-    runtime: python
+    env: python
     rootDir: hotelplatformapi
     buildCommand: |
       pip install -r requirements.txt
@@ -46,11 +46,9 @@ services:
   # React Frontend
   - type: static
     name: hotel-platform-web
-    buildCommand: |
-      cd hotelplatformweb-vite
-      npm install --production=false
-      npm run build
-    staticPublishPath: hotelplatformweb-vite/dist
+    rootDir: hotelplatformweb-vite
+    buildCommand: npm install --production=false && npm run build
+    staticPublishPath: dist
     envVars:
       - key: NODE_ENV
         value: production
