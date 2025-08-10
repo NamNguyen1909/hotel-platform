@@ -43,16 +43,13 @@ services:
     healthCheckPath: /health/
     autoDeploy: true
 
-  # React Frontend - Static Site
-  - type: static
+  # React Frontend - Express.js serving static files  
+  - type: web
     name: hotel-platform-web
+    env: node
     rootDir: hotelplatformweb-vite
     buildCommand: npm ci && npm run build
-    staticPublishPath: dist
-    routes:
-      - type: rewrite
-        source: "/*"
-        destination: "/index.html"
+    startCommand: node server.js
     envVars:
       - key: NODE_ENV
         value: production
