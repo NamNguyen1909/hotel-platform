@@ -21,6 +21,8 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'static',
     sourcemap: false,
+    minify: 'terser',
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
         manualChunks: {
@@ -32,5 +34,9 @@ export default defineConfig({
     },
     // Ensure _redirects file is copied to dist
     copyPublicDir: true,
+  },
+  // Optimizations for production
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
   },
 });

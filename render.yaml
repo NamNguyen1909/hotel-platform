@@ -54,3 +54,8 @@ services:
     staticPublishPath: hotelplatformweb-vite/dist
     pullRequestPreviewsEnabled: false
     autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: "production"
+      - key: VITE_API_BASE_URL
+        value: "https://hotel-platform-api.onrender.com"
