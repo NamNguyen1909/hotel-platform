@@ -42,10 +42,6 @@ services:
     plan: free
     healthCheckPath: /
     autoDeploy: true
-    disk:
-      name: hotel-platform-api-disk
-      mountPath: /app/media
-      sizeGB: 1
 
   # React Frontend
   - type: web
