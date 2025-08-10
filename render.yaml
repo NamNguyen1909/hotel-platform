@@ -38,7 +38,7 @@ services:
       - key: CLOUDINARY_API_SECRET
         sync: false
       - key: PYTHON_VERSION
-        value: "3.11"
+        value: "3.11.10"
     plan: free
     healthCheckPath: /health/
     autoDeploy: true
@@ -48,7 +48,7 @@ services:
     name: hotel-platform-web
     env: node
     rootDir: hotelplatformweb-vite
-    buildCommand: npm ci && npm run build
+    buildCommand: npm install && npm run build
     startCommand: npx serve dist -s -p $PORT
     plan: free
     envVars:
