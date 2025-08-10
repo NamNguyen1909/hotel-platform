@@ -5,7 +5,6 @@ import pytz
 from django.shortcuts import redirect, render
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
 import urllib
 import logging
 from decimal import Decimal, ROUND_HALF_UP
@@ -15,29 +14,9 @@ logger = logging.getLogger(__name__)
 
 # Health check endpoint for Render deployment
 @csrf_exempt
-@require_http_methods(["GET", "HEAD"])
 def health_check(request):
     """Simple health check endpoint for Render.com deployment"""
-    try:
-        from django.utils import timezone
-        from django.db import connection
-        
-        # Test database connection
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            
-        return JsonResponse({
-            'status': 'healthy',
-            'message': 'Hotel Platform API is running',
-            'timestamp': timezone.now().isoformat(),
-            'database': 'connected'
-        }, status=200)
-    except Exception as e:
-        return JsonResponse({
-            'status': 'unhealthy',
-            'message': f'Health check failed: {str(e)}',
-            'database': 'disconnected'
-        }, status=503)
+    return JsonResponse({'status': 'healthy'}, status=200)
 
 # REST Framework imports
 from rest_framework import viewsets, status, generics

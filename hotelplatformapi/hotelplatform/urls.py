@@ -19,9 +19,6 @@ router.register(r'invoices', views.InvoiceViewSet, basename='invoice')
 urlpatterns = [
     path('', include(router.urls)),
     
-    # Health check endpoint
-    path('health/', views.health_check, name='health-check'),
-    
     # QR Code endpoints
     path('api/qr-payment/', views.QRCodePaymentView.as_view(), name='qr-payment'),
     path('api/qr-generate/', views.QRCodeGenerateView.as_view(), name='qr-generate'),
