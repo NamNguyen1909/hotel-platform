@@ -48,17 +48,7 @@ services:
     name: hotel-platform-web
     runtime: node
     rootDir: hotelplatformweb-vite
-    buildCommand: |
-      cd ..
-      NODE_ENV=development npm install
-      cd hotelplatformweb-vite
-      NODE_ENV=development npm install
-      echo "=== Checking vite installation ==="
-      ls -la node_modules/.bin/ | grep vite || echo "vite not found in .bin"
-      which vite || echo "vite not in PATH"
-      npm list vite || echo "vite not in npm list"
-      echo "=== Running build ==="
-      npm run build
+    buildCommand: npm install && npm run build
     startCommand: npm run preview -- --port $PORT --host 0.0.0.0
     envVars:
       - key: VITE_API_BASE_URL
@@ -67,9 +57,6 @@ services:
         value: "20"
       - key: NODE_ENV
         value: "production"
-        value: "https://hotel-platform-api.onrender.com"
-      - key: NODE_VERSION
-        value: "20"
     plan: free
     healthCheckPath: /
     autoDeploy: true
