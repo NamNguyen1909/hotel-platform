@@ -17,6 +17,10 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Card,
+  CardContent,
+  Divider,
+  Grid,
 } from '@mui/material';
 import { DataGrid } from '@mui/x-data-grid';
 import {
@@ -79,6 +83,8 @@ const Bookings = () => {
     open: false,
     booking: null,
     actualGuestCount: 0,
+    estimatedPrice: 0,
+    surchargeInfo: null,
   });
   const [checkoutDialog, setCheckoutDialog] = useState({
     open: false,
@@ -277,18 +283,99 @@ const Bookings = () => {
     setDialog({ open: false, action: null, bookingId: null, title: '', message: '' });
   };
 
-  // Mở modal check-in
+  // Mở modal check-in với tính giá tạm tính
   const openCheckinDialog = (booking) => {
     setCheckinDialog({
       open: true,
       booking: booking,
       actualGuestCount: booking.guest_count, // Mặc định bằng số khách đã đặt
+      estimatedPrice: booking.total_price,
+      surchargeInfo: null,
     });
+  };
+
+  // Tính giá tạm tính dựa trên số khách thực tế so với max_guests của room type
+  const calculateEstimatedPrice = (booking, actualGuestCount) => {
+    if (!booking || !actualGuestCount) return booking?.total_price || 0;
+    
+    const originalPrice = booking.total_price;
+    const rooms = booking.room_details || [];
+    
+    if (!rooms.length) {
+      return {
+        estimatedPrice: originalPrice,
+        surchargeInfo: null,
+        breakdown: null
+      };
+    }
+
+    // Tính tổng max_guests của tất cả phòng
+    const totalMaxGuests = rooms.reduce((sum, room) => sum + (room.room_type_max_guests || 0), 0);
+    
+    // Nếu số khách thực tế <= tổng max_guests, không có phụ thu
+    if (actualGuestCount <= totalMaxGuests) {
+      return {
+        estimatedPrice: originalPrice,
+        surchargeInfo: actualGuestCount < booking.guest_count ? 
+          `Ít khách hơn dự kiến: ${booking.guest_count - actualGuestCount} khách` : null,
+        breakdown: null
+      };
+    }
+    
+    // Có phụ thu nếu vượt quá max_guests
+    const extraGuests = actualGuestCount - totalMaxGuests;
+    
+    // Tính phụ thu dựa trên extra_guest_surcharge của từng room type
+    let totalSurcharge = 0;
+    const stayDays = Math.ceil((new Date(booking.check_out_date) - new Date(booking.check_in_date)) / (1000 * 60 * 60 * 24));
+    
+    rooms.forEach(room => {
+      const roomSurcharge = (room.room_type_price || 0) * ((room.room_type_extra_guest_surcharge || 20) / 100);
+      totalSurcharge += roomSurcharge * stayDays;
+    });
+    
+    // Phân bổ phụ thu theo tỷ lệ khách thêm
+    const proportionalSurcharge = (totalSurcharge * extraGuests) / rooms.length;
+    const estimatedPrice = originalPrice + proportionalSurcharge;
+    
+    return {
+      estimatedPrice: estimatedPrice,
+      surchargeInfo: `Phụ thu ${extraGuests} khách vượt quá giới hạn (${totalMaxGuests} khách): ${formatPrice(proportionalSurcharge)}`,
+      breakdown: {
+        original: originalPrice,
+        surcharge: proportionalSurcharge,
+        total: estimatedPrice,
+        maxGuests: totalMaxGuests,
+        extraGuests: extraGuests
+      }
+    };
+  };
+
+  // Xử lý thay đổi số khách thực tế
+  const handleGuestCountChange = (newGuestCount) => {
+    if (!checkinDialog.booking) return;
+    
+    // Tính lại giá
+    const priceData = calculateEstimatedPrice(checkinDialog.booking, newGuestCount);
+    
+    setCheckinDialog(prev => ({
+      ...prev,
+      actualGuestCount: newGuestCount,
+      estimatedPrice: priceData.estimatedPrice,
+      surchargeInfo: priceData.surchargeInfo,
+      breakdown: priceData.breakdown,
+    }));
   };
 
   // Đóng modal check-in
   const closeCheckinDialog = () => {
-    setCheckinDialog({ open: false, booking: null, actualGuestCount: 0 });
+    setCheckinDialog({ 
+      open: false, 
+      booking: null, 
+      actualGuestCount: 0,
+      estimatedPrice: 0,
+      surchargeInfo: null,
+    });
   };
 
   // Xử lý check-in với actual guest count
@@ -642,48 +729,207 @@ const Bookings = () => {
         )}
       </Paper>
 
-      {/* Modal Check-in */}
-      <Dialog open={checkinDialog.open} onClose={closeCheckinDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>Check-in Booking</DialogTitle>
-        <DialogContent>
+      {/* Enhanced Modal Check-in với Price Calculator */}
+      <Dialog 
+        open={checkinDialog.open} 
+        onClose={closeCheckinDialog} 
+        maxWidth="md" 
+        fullWidth
+        PaperProps={{
+          sx: { borderRadius: 2 }
+        }}
+      >
+        <DialogTitle sx={{ 
+          background: 'linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)',
+          color: 'white',
+          textAlign: 'center',
+          fontWeight: 'bold'
+        }}>
+          🏨 Check-in Booking
+        </DialogTitle>
+        <DialogContent sx={{ p: 3 }}>
           {checkinDialog.booking && (
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="body1" gutterBottom>
-                <strong>Booking ID:</strong> {checkinDialog.booking.id}
-              </Typography>
-              <Typography variant="body1" gutterBottom>
-                <strong>Khách hàng:</strong> {checkinDialog.booking.customer_name}
-              </Typography>
-              <Typography variant="body1" gutterBottom>
-                <strong>Phòng:</strong> {checkinDialog.booking.room_numbers}
-              </Typography>
-              <Typography variant="body1" gutterBottom>
-                <strong>Số khách đã đặt:</strong> {checkinDialog.booking.guest_count}
-              </Typography>
-              
-              <TextField
-                label="Số khách thực tế"
-                type="number"
-                value={checkinDialog.actualGuestCount}
-                onChange={(e) => setCheckinDialog(prev => ({
-                  ...prev,
-                  actualGuestCount: parseInt(e.target.value) || 0
-                }))}
-                fullWidth
-                margin="normal"
-                inputProps={{ min: 1 }}
-                helperText="Nhập số khách thực tế check-in"
-              />
-            </Box>
+            <Grid container spacing={3}>
+              {/* Thông tin booking */}
+              <Grid item xs={12}>
+                <Card variant="outlined" sx={{ mb: 2 }}>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom color="primary">
+                      📋 Thông tin Booking
+                    </Typography>
+                    <Grid container spacing={2}>
+                      <Grid item xs={6}>
+                        <Typography variant="body2" color="text.secondary">
+                          Booking ID
+                        </Typography>
+                        <Typography variant="body1" fontWeight="bold">
+                          #{checkinDialog.booking.id}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="body2" color="text.secondary">
+                          Khách hàng
+                        </Typography>
+                        <Typography variant="body1" fontWeight="bold">
+                          {checkinDialog.booking.customer_name}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="body2" color="text.secondary">
+                          Phòng
+                        </Typography>
+                        <Typography variant="body1" fontWeight="bold">
+                          {checkinDialog.booking.room_numbers}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="body2" color="text.secondary">
+                          Số khách đã đặt
+                        </Typography>
+                        <Typography variant="body1" fontWeight="bold">
+                          {checkinDialog.booking.guest_count} khách
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="body2" color="text.secondary">
+                          Giới hạn phòng
+                        </Typography>
+                        <Typography variant="body1" fontWeight="bold" color="info.main">
+                          {checkinDialog.booking.room_details?.reduce((sum, room) => sum + (room.room_type_max_guests || 0), 0) || 0} khách tối đa
+                        </Typography>
+                      </Grid>
+                    </Grid>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Input số khách thực tế */}
+              <Grid item xs={12} md={6}>
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom color="primary">
+                      👥 Số khách thực tế
+                    </Typography>
+                    <TextField
+                      label="Số khách check-in"
+                      type="number"
+                      value={checkinDialog.actualGuestCount}
+                      onChange={(e) => handleGuestCountChange(parseInt(e.target.value) || 0)}
+                      fullWidth
+                      inputProps={{ min: 1, max: 20 }}
+                      helperText={`Nhập số khách thực tế (Tối đa ${checkinDialog.booking.room_details?.reduce((sum, room) => sum + (room.room_type_max_guests || 0), 0) || 0} khách miễn phụ thu)`}
+                      sx={{ mt: 1 }}
+                    />
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Thông tin giá */}
+              <Grid item xs={12} md={6}>
+                <Card variant="outlined" sx={{ bgcolor: '#f8f9fa' }}>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom color="primary">
+                      💰 Tính giá tạm tính
+                    </Typography>
+                    <Box sx={{ mt: 1 }}>
+                      <Stack spacing={1}>
+                        <Box display="flex" justifyContent="space-between">
+                          <Typography variant="body2" color="text.secondary">
+                            Giá gốc:
+                          </Typography>
+                          <Typography variant="body2">
+                            {formatPrice(checkinDialog.booking.total_price)}
+                          </Typography>
+                        </Box>
+                        
+                        {checkinDialog.actualGuestCount !== checkinDialog.booking.guest_count && (
+                          <>
+                            <Divider />
+                            <Box display="flex" justifyContent="space-between">
+                              <Typography variant="body2" color="warning.main">
+                                Giá theo số khách thực tế:
+                              </Typography>
+                              <Typography variant="body2" color="warning.main" fontWeight="bold">
+                                {formatPrice(checkinDialog.estimatedPrice)}
+                              </Typography>
+                            </Box>
+                            
+                            {checkinDialog.surchargeInfo && (
+                              <Box sx={{ 
+                                p: 1, 
+                                bgcolor: 'warning.light', 
+                                borderRadius: 1,
+                                color: 'warning.contrastText' 
+                              }}>
+                                <Typography variant="caption">
+                                  ⚠️ {checkinDialog.surchargeInfo}
+                                </Typography>
+                              </Box>
+                            )}
+                          </>
+                        )}
+                        
+                        <Divider />
+                        <Box display="flex" justifyContent="space-between">
+                          <Typography variant="body1" fontWeight="bold" color="primary">
+                            Tổng cộng:
+                          </Typography>
+                          <Typography variant="body1" fontWeight="bold" color="primary">
+                            {formatPrice(checkinDialog.estimatedPrice)}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Thông tin thời gian */}
+              <Grid item xs={12}>
+                <Card variant="outlined" sx={{ bgcolor: '#e3f2fd' }}>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom color="primary">
+                      📅 Thông tin thời gian
+                    </Typography>
+                    <Grid container spacing={2}>
+                      <Grid item xs={6}>
+                        <Typography variant="body2" color="text.secondary">
+                          Check-in dự kiến
+                        </Typography>
+                        <Typography variant="body1">
+                          {formatDate(checkinDialog.booking.check_in_date)}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="body2" color="text.secondary">
+                          Check-out dự kiến
+                        </Typography>
+                        <Typography variant="body1">
+                          {formatDate(checkinDialog.booking.check_out_date)}
+                        </Typography>
+                      </Grid>
+                    </Grid>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={closeCheckinDialog}>Hủy</Button>
+        <DialogActions sx={{ p: 3, pt: 0 }}>
+          <Button 
+            onClick={closeCheckinDialog}
+            variant="outlined"
+            size="large"
+          >
+            Hủy
+          </Button>
           <Button 
             onClick={() => handleCheckIn(checkinDialog.booking?.id, checkinDialog.actualGuestCount)}
             color="primary" 
             variant="contained"
+            size="large"
             disabled={!checkinDialog.actualGuestCount || checkinDialog.actualGuestCount <= 0}
+            startIcon={<CheckCircle />}
           >
             Xác nhận Check-in
           </Button>

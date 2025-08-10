@@ -797,7 +797,13 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
                 
                 # TÍNH GIÁ THỰC TẾ với số khách actual - sử dụng logic có sẵn trong models
                 actual_total_price = booking.calculate_actual_price(actual_guest_count)
+                # Làm tròn về 2 chữ số thập phân để tránh validation error
+                actual_total_price = actual_total_price.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
                 logger.info(f"Calculated actual price: {actual_total_price} (vs original: {booking.total_price})")
+                
+                # Cập nhật total_price của booking với giá thực tế
+                booking.total_price = actual_total_price
+                booking.save()
                 
                 room_rental = RoomRental(
                     customer=booking.customer,
