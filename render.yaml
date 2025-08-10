@@ -48,7 +48,12 @@ services:
     name: hotel-platform-web
     runtime: node
     rootDir: hotelplatformweb-vite
-    buildCommand: npm install && npm run build
+    buildCommand: |
+      cd ..
+      npm install
+      cd hotelplatformweb-vite
+      npm install
+      npm run build
     startCommand: npm run preview -- --port $PORT --host 0.0.0.0
     envVars:
       - key: VITE_API_BASE_URL
