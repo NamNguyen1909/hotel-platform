@@ -50,7 +50,7 @@ services:
     rootDir: hotelplatformweb-vite
     buildCommand: |
       rm -rf node_modules package-lock.json
-      npm install
+      npm install --production=false
       npm run build
     startCommand: NODE_ENV=production npm run preview -- --port $PORT --host 0.0.0.0
     envVars:
