@@ -56,6 +56,8 @@ class RoomTypeSerializer(ModelSerializer):
 class RoomSerializer(ModelSerializer):
     room_type_name = serializers.ReadOnlyField(source='room_type.name')
     room_type_price = serializers.ReadOnlyField(source='room_type.base_price')
+    room_type_max_guests = serializers.ReadOnlyField(source='room_type.max_guests')
+    room_type_extra_guest_surcharge = serializers.ReadOnlyField(source='room_type.extra_guest_surcharge')
     primary_image_url = serializers.SerializerMethodField()
     
     def get_primary_image_url(self, obj):
@@ -69,7 +71,7 @@ class RoomSerializer(ModelSerializer):
     
     class Meta:
         model = Room
-        fields = ['id', 'room_number', 'room_type', 'room_type_name', 'room_type_price', 'status', 'primary_image_url', 'created_at', 'updated_at']
+        fields = ['id', 'room_number', 'room_type', 'room_type_name', 'room_type_price', 'room_type_max_guests', 'room_type_extra_guest_surcharge', 'status', 'primary_image_url', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at', 'primary_image_url']
     
     def validate_status(self, value):
