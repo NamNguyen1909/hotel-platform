@@ -44,20 +44,13 @@ services:
     autoDeploy: true
 
   # React Frontend
-  - type: web
+  - type: static
     name: hotel-platform-web
-    runtime: node
-    rootDir: hotelplatformweb-vite
     buildCommand: |
+      cd hotelplatformweb-vite
       rm -rf node_modules package-lock.json
       npm install --production=false
       npm run build
-    startCommand: NODE_ENV=production npm run preview -- --port $PORT --host 0.0.0.0
-    envVars:
-      - key: VITE_API_BASE_URL
-        value: "https://hotel-platform-api.onrender.com"
-      - key: NODE_VERSION
-        value: "20"
-    plan: free
-    healthCheckPath: /
+    staticPublishPath: hotelplatformweb-vite/dist
+    pullRequestPreviewsEnabled: false
     autoDeploy: true
