@@ -7,8 +7,7 @@
     "dev": "vite",
     "build": "npx vite build",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "start": "npm run build && npx serve dist"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
