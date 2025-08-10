@@ -61,11 +61,7 @@ services:
       - key: NODE_VERSION
         value: "20"
       - key: NODE_ENV
-        value: production
-      - key: NODE_VERSION
-        value: "20"
-      - key: NODE_VERSION
-        value: "18"
+        value: "production"
     plan: free
     healthCheckPath: /
     autoDeploy: true
