@@ -44,9 +44,8 @@ services:
     autoDeploy: true
 
   # React Frontend - Static Site
-  - type: web
+  - type: static
     name: hotel-platform-web
-    env: node
     rootDir: hotelplatformweb-vite
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
