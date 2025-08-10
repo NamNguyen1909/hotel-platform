@@ -23,12 +23,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-q+k0%wy3_kxy&)egzf^lmf$hzn0u*zzx--55&5u8f=)^lf2yas'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-q+k0%wy3_kxy&)egzf^lmf$hzn0u*zzx--55&5u8f=)^lf2yas')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 # Application definition
 INSTALLED_APPS = [
@@ -50,9 +50,10 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  # CORS middleware
-    'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # Static files middleware for production
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -79,22 +80,30 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'hotelplatformapi.wsgi.application'
 
+import dj_database_url
+
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 DATABASES = {
-    # 'default': dj_database_url.config(
-    #     default=os.getenv('DATABASE_URL'),
-    #     conn_max_age=600,
-    #     ssl_require=True
-    # )
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'hoteldb',
-        'USER': 'root',
-        'PASSWORD': os.getenv('DB_PASSWORD'),  # Lấy từ biến môi trường
-        'HOST': ''  # mặc định localhost
-    }
+    'default': dj_database_url.config(
+        default=os.getenv('DATABASE_URL', f'mysql://root:{os.getenv("DB_PASSWORD", "")}@localhost/hoteldb'),
+        conn_max_age=600,
+        ssl_require=False  # Set to True for production SSL connections
+    )
 }
+
+# For local development fallback
+if not os.getenv('DATABASE_URL'):
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': 'hoteldb',
+            'USER': 'root',
+            'PASSWORD': os.getenv('DB_PASSWORD'),
+            'HOST': '',  # localhost
+            'PORT': '',  # default port
+        }
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -123,6 +132,11 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 STATIC_URL = 'static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# Media files
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -130,11 +144,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'hotelplatform.User'
 
+# Cloudinary Configuration
 import cloudinary
 cloudinary.config(
-    cloud_name="dncgine9e",
-    api_key="257557947612624",
-    api_secret="88EDQ7-Ltwzn1oaI4tT_UIb_bWI",
+    cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME'),
+    api_key=os.environ.get('CLOUDINARY_API_KEY'),
+    api_secret=os.environ.get('CLOUDINARY_API_SECRET'),
     secure=True
 )
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
@@ -207,11 +222,23 @@ REST_FRAMEWORK = {
     ],
 }
 
-CORS_ALLOW_ALL_ORIGINS = True  # Cho phép tất cả các nguồn gốc
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:3000',  # React dev server
-    'http://localhost:5173',  # Vite dev server
-]
+# CORS Configuration for production and development
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in development
+
+if not DEBUG:
+    # Production CORS settings
+    CORS_ALLOWED_ORIGINS = os.environ.get(
+        'CORS_ALLOWED_ORIGINS', 
+        'https://hotel-platform-web.onrender.com'
+    ).split(',')
+else:
+    # Development CORS settings
+    CORS_ALLOWED_ORIGINS = [
+        'http://localhost:3000',  # React dev server
+        'http://localhost:5173',  # Vite dev server
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:5173',
+    ]
 
 CLIENT_ID = 'kycIFibcgbEopjJ9esSVPU5PTECw6z4jAqMZ5j9w'
 CLIENT_SECRET = 'TI8kzKgylZvAmqmSoi0SpgYt4z0pBS3SzNEEEPey0tVpYXRBQJgfrsYQzakk433ONKTc8WF9q3FnZR0XtDI1aOkj5bsIJcL9hZvpHaxJH9vXOUklrGXaiPivlJPOYuN4'
@@ -261,3 +288,15 @@ LOGGING = {
         },
     },
 }
+
+# WhiteNoise configuration for static files in production
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# Additional security settings for production
+if not DEBUG:
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    X_FRAME_OPTIONS = 'DENY'

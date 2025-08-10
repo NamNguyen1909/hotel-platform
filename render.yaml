@@ -1,0 +1,68 @@
+databases:
+  - name: hotel-platform-db
+    databaseName: hotelplatform
+    user: hotelplatform_user
+    plan: free
+
+services:
+  # Django Backend API
+  - type: web
+    name: hotel-platform-api
+    runtime: python
+    rootDir: hotelplatformapi
+    buildCommand: |
+      pip install -r requirements.txt
+      python manage.py collectstatic --noinput
+      python manage.py migrate
+      python manage.py seed
+    startCommand: gunicorn --workers 2 --bind 0.0.0.0:$PORT hotelplatformapi.wsgi:application
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: hotel-platform-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DJANGO_SETTINGS_MODULE
+        value: hotelplatformapi.settings
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: "hotel-platform-api.onrender.com,hotel-platform-web.onrender.com,localhost,127.0.0.1"
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://hotel-platform-web.onrender.com"
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.11"
+    plan: free
+    healthCheckPath: /
+    autoDeploy: true
+    disk:
+      name: hotel-platform-api-disk
+      mountPath: /app/media
+      sizeGB: 1
+
+  # React Frontend
+  - type: web
+    name: hotel-platform-web
+    runtime: node
+    rootDir: hotelplatformweb-vite
+    buildCommand: |
+      npm ci
+      npm run build
+    startCommand: npm run preview -- --port $PORT --host 0.0.0.0
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: "https://hotel-platform-api.onrender.com"
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "18"
+    plan: free
+    healthCheckPath: /
+    autoDeploy: true
