@@ -21,7 +21,7 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'static',
     sourcemap: false,
-    minify: 'terser', // Terser cho compression tốt hơn
+    minify: 'esbuild', // Sử dụng esbuild thay vì terser
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
