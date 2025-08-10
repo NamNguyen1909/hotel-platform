@@ -53,7 +53,7 @@ services:
     runtime: node
     rootDir: hotelplatformweb-vite
     buildCommand: |
-      npm ci
+      npm install
       npm run build
     startCommand: npm run preview -- --port $PORT --host 0.0.0.0
     envVars:
@@ -61,6 +61,8 @@ services:
         value: "https://hotel-platform-api.onrender.com"
       - key: NODE_ENV
         value: production
+      - key: NODE_VERSION
+        value: "20"
       - key: NODE_VERSION
         value: "18"
     plan: free
