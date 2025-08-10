@@ -34,6 +34,7 @@ urlpatterns = [
     
     # Room status update task endpoint
     path('api/tasks/update-room-status/', views.RoomStatusUpdateTaskView.as_view(), name='update-room-status-task'),
+    path('api/tasks/status/', views.TaskStatusView.as_view(), name='task-status'),
     
     # VNPay endpoints
     path('vnpay/create-payment/', views.create_payment_url, name='create_payment_url'),

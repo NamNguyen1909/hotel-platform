@@ -35,6 +35,8 @@ services:
         value: "https://hotel-platform-web.onrender.com"
       - key: BACKEND_URL
         value: "https://hotel-platform-api.onrender.com"
+      - key: CRON_API_KEY
+        value: "hotel-platform-cron-2025-secure"
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
       - key: CLOUDINARY_API_KEY

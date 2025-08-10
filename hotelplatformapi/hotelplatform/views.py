@@ -2408,11 +2408,26 @@ class RoomStatusUpdateTaskView(APIView):
     - Xử lý no-show bookings và giải phóng phòng
     """
     permission_classes = [AllowAny]  #  Allow external systems to call this endpoint
+    
+    @csrf_exempt
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
 
     def post(self, request):
         """
          MAIN AUTOMATION LOGIC - Process room status updates based on booking timeline
         """
+        # Optional: Kiểm tra API key cho security
+        api_key = request.headers.get('X-API-Key') or request.data.get('api_key')
+        expected_key = os.environ.get('CRON_API_KEY', 'hotel-platform-cron-2025')
+        
+        if api_key != expected_key:
+            logger.warning(f"Unauthorized cron job attempt with key: {api_key}")
+            return Response({
+                'error': 'Unauthorized',
+                'message': 'Invalid API key'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
         from django.utils import timezone
         
         logger.info("=== Starting room status update task ===")
@@ -2537,6 +2552,52 @@ class RoomStatusUpdateTaskView(APIView):
             
             logger.error(f"Room status update task failed: {str(e)}")
             return Response(error_result, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class TaskStatusView(APIView):
+    """
+    Endpoint để kiểm tra trạng thái tasks và thống kê hệ thống
+    """
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        """Get system status and upcoming tasks"""
+        from django.utils import timezone
+        
+        now = timezone.now()
+        today = now.date()
+        
+        # Thống kê bookings sắp tới
+        upcoming_checkins = Booking.objects.filter(
+            status__in=[BookingStatus.PENDING, BookingStatus.CONFIRMED],
+            check_in_date__date=today
+        ).count()
+        
+        overdue_checkins = Booking.objects.filter(
+            status__in=[BookingStatus.PENDING, BookingStatus.CONFIRMED],
+            check_in_date__lt=now - timedelta(hours=6)
+        ).count()
+        
+        # Thống kê phòng
+        room_stats = {
+            'available': Room.objects.filter(status='available').count(),
+            'booked': Room.objects.filter(status='booked').count(),
+            'occupied': Room.objects.filter(status='occupied').count(),
+            'maintenance': Room.objects.filter(status='maintenance').count(),
+        }
+        
+        return Response({
+            'system_status': 'healthy',
+            'timestamp': now.isoformat(),
+            'upcoming_tasks': {
+                'checkins_today': upcoming_checkins,
+                'overdue_checkins': overdue_checkins,
+                'next_run_needed': upcoming_checkins > 0 or overdue_checkins > 0
+            },
+            'room_status': room_stats,
+            'last_check': now.isoformat()
+        })
+
 
 class InvoiceViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
     queryset = Payment.objects.all()
