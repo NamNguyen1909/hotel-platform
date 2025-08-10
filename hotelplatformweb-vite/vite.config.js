@@ -21,7 +21,7 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'static',
     sourcemap: false,
-    minify: 'terser',
+    minify: 'terser', // Terser cho compression tốt hơn
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
