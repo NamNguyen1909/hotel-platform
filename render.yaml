@@ -49,7 +49,9 @@ services:
     runtime: node
     rootDir: hotelplatformweb-vite
     buildCommand: |
+      cd ..
       npm install
+      cd hotelplatformweb-vite
       npm run build
     startCommand: npm run preview -- --port $PORT --host 0.0.0.0
     envVars:
