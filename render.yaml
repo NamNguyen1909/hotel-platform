@@ -48,14 +48,8 @@ services:
     name: hotel-platform-web
     buildCommand: |
       cd hotelplatformweb-vite
-      rm -rf node_modules package-lock.json
-      npm install --production=false
+      npm install
       npm run build
     staticPublishPath: hotelplatformweb-vite/dist
     pullRequestPreviewsEnabled: false
     autoDeploy: true
-    envVars:
-      - key: NODE_ENV
-        value: "production"
-      - key: VITE_API_BASE_URL
-        value: "https://hotel-platform-api.onrender.com"
