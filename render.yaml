@@ -15,7 +15,7 @@ services:
       python manage.py collectstatic --noinput
       python manage.py migrate
       python manage.py seed
-    startCommand: gunicorn --workers 2 --bind 0.0.0.0:$PORT hotelplatformapi.wsgi:application
+    startCommand: gunicorn --workers 2 --bind 0.0.0.0:$PORT --timeout 30 --keep-alive 2 --max-requests 1000 --max-requests-jitter 50 hotelplatformapi.wsgi:application
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -28,7 +28,7 @@ services:
       - key: DEBUG
         value: "False"
       - key: ALLOWED_HOSTS
-        value: "hotel-platform-api.onrender.com,hotel-platform-web.onrender.com,localhost,127.0.0.1"
+        value: "hotel-platform-api.onrender.com,hotel-platform-web.onrender.com,localhost,127.0.0.1,*.onrender.com,hotel-platform-api-sduw.onrender.com"
       - key: CORS_ALLOWED_ORIGINS
         value: "https://hotel-platform-web.onrender.com"
       - key: CLOUDINARY_CLOUD_NAME

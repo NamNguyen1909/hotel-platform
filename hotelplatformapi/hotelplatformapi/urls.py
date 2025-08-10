@@ -3,6 +3,7 @@ from django.contrib import admin
 from django.urls import include, path, re_path
 from rest_framework import permissions
 from hotelplatform.admin import admin_site  # Import custom admin site
+from health_check import simple_health_check, detailed_health_check  # Import health check functions
 
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
@@ -27,6 +28,10 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
+    # Health check endpoints (before other URLs for priority)
+    path('health/', simple_health_check, name='health-check-simple'),
+    path('health/detailed/', detailed_health_check, name='health-check-detailed'),
+    
     # Admin URLs
     path('admin/', admin.site.urls),
     path('hotel-admin/', admin_site.urls),  # Custom admin site
