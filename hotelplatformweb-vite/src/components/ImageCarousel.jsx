@@ -1,7 +1,11 @@
 import React from 'react';
 import { Box } from '@mui/material';
+// Import Swiper React components
 import { Swiper, SwiperSlide } from 'swiper/react';
+// Import Swiper modules
 import { Navigation, Pagination, Autoplay } from 'swiper/modules';
+
+// Import Swiper styles
 import 'swiper/css';
 import 'swiper/css/navigation';
 import 'swiper/css/pagination';
