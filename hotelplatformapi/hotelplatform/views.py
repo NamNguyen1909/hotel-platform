@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 import hashlib
 import hmac
 import pytz
+import os
 from django.shortcuts import redirect, render
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -1990,7 +1991,9 @@ def create_payment_url(request):
     vnp_TmnCode = 'GUPETCYO'
     vnp_HashSecret = 'E2G0Y153XRTW37LVRKW8DJ1TGEQ9RK6I'
     vnp_Url = 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html'
-    vnp_ReturnUrl = 'http://127.0.0.1:8000/vnpay/redirect/'
+    # Sử dụng environment variable cho backend URL
+    backend_base_url = os.environ.get('BACKEND_URL', 'http://127.0.0.1:8000')
+    vnp_ReturnUrl = f'{backend_base_url}/vnpay/redirect/'
 
     #Nhận các thông tin đơn hàng từ request
     amount = request.GET.get("amount", "10000")  # đơn vị VND
@@ -2136,7 +2139,9 @@ def vnpay_redirect(request):
         logger.error(f"Payment not found for transaction {vnp_TxnRef}")
 
     # Tạo frontend redirect URL với thông tin booking để không mất context
-    frontend_url = f"http://localhost:5173/staff/bookings?payment_result={'success' if payment_success else 'failed'}&message={urllib.parse.quote(message)}&auto_refresh=true"
+    # Sử dụng environment variable cho frontend URL
+    frontend_base_url = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+    frontend_url = f"{frontend_base_url}/staff/bookings?payment_result={'success' if payment_success else 'failed'}&message={urllib.parse.quote(message)}&auto_refresh=true"
     
     # Always redirect to frontend
     return HttpResponse(f"""

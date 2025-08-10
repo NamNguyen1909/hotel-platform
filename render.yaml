@@ -31,6 +31,10 @@ services:
         value: "hotel-platform-api.onrender.com,hotel-platform-web.onrender.com,localhost,127.0.0.1,*.onrender.com,hotel-platform-api-sduw.onrender.com"
       - key: CORS_ALLOWED_ORIGINS
         value: "https://hotel-platform-web.onrender.com"
+      - key: FRONTEND_URL
+        value: "https://hotel-platform-web.onrender.com"
+      - key: BACKEND_URL
+        value: "https://hotel-platform-api.onrender.com"
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
       - key: CLOUDINARY_API_KEY
