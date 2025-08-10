@@ -49,11 +49,8 @@ services:
     runtime: node
     rootDir: hotelplatformweb-vite
     buildCommand: |
-      ls -la
-      pwd
-      npm install --production=false --no-optional
-      ls -la node_modules/ | head -20
-      npx vite --version
+      rm -rf node_modules package-lock.json
+      npm install
       npm run build
     startCommand: NODE_ENV=production npm run preview -- --port $PORT --host 0.0.0.0
     envVars:
@@ -61,8 +58,6 @@ services:
         value: "https://hotel-platform-api.onrender.com"
       - key: NODE_VERSION
         value: "20"
-      - key: DEBUG
-        value: "*"
     plan: free
     healthCheckPath: /
     autoDeploy: true
