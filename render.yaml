@@ -40,7 +40,7 @@ services:
       - key: PYTHON_VERSION
         value: "3.11"
     plan: free
-    healthCheckPath: /
+    healthCheckPath: /health/
     autoDeploy: true
 
   # React Frontend
@@ -48,8 +48,13 @@ services:
     name: hotel-platform-web
     buildCommand: |
       cd hotelplatformweb-vite
-      npm install
+      npm install --production=false
       npm run build
     staticPublishPath: hotelplatformweb-vite/dist
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: VITE_API_BASE_URL
+        value: https://hotel-platform-api.onrender.com
     pullRequestPreviewsEnabled: false
     autoDeploy: true

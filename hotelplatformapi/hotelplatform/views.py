@@ -12,6 +12,15 @@ from decimal import Decimal, ROUND_HALF_UP
 # Thiết lập logger
 logger = logging.getLogger(__name__)
 
+# Health check endpoint for Render deployment
+def health_check(request):
+    """Simple health check endpoint for Render.com deployment"""
+    return JsonResponse({
+        'status': 'healthy',
+        'message': 'Hotel Platform API is running',
+        'timestamp': timezone.now().isoformat()
+    })
+
 # REST Framework imports
 from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action
