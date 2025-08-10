@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, Typography, CircularProgress, Box, Button, Chip, Alert, Container, Grid } from '@mui/material';
-import { Carousel } from 'react-responsive-carousel';
-import 'react-responsive-carousel/lib/styles/carousel.min.css';
 import api from '../services/apis';
 import authUtils from '../services/auth';
+import ImageCarousel from '../components/ImageCarousel';
 
 const RoomDetail = () => {
   const { id } = useParams();
@@ -70,44 +69,45 @@ const RoomDetail = () => {
   const images = room.images?.length
     ? room.images.map((img) => ({
         url: img.image_url,
-        caption: img.caption || `Phòng ${room.room_number}`,
+        alt: img.caption || `Phòng ${room.room_number}`,
       }))
-    : [{ url: '/images/default-room.jpg', caption: 'Ảnh mặc định' }];
+    : [{ url: '/images/default-room.jpg', alt: 'Ảnh mặc định' }];
 
   return (
     <Box sx={{ bgcolor: 'background.default', minHeight: '100vh', py: 6 }}>
       <Container maxWidth="lg">
-        <Card sx={{ borderRadius: 4, boxShadow: '0 8px 24px rgba(139, 69, 19, 0.2)', overflow: 'hidden' }}>
-          <Carousel showThumbs={true} showStatus={false} infiniteLoop autoPlay>
-            {images.map((img, index) => (
-              <div key={index}>
-                <img src={img.url} alt={img.caption} style={{ height: { xs: '300px', sm: '500px' }, objectFit: 'cover' }} />
-                <p style={{ fontFamily: 'Inter', backgroundColor: 'rgba(0,0,0,0.7)', color: 'white', padding: '8px' }}>
-                  {img.caption}
-                </p>
-              </div>
-            ))}
-          </Carousel>
-          <CardContent sx={{ p: 4, bgcolor: '#FFF8DC' }}>
-            <Typography variant="h3" sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 700, mb: 3, textAlign: 'center' }}>
+        <Card sx={{ borderRadius: 3, boxShadow: '0 6px 20px rgba(139, 69, 19, 0.15)', overflow: 'hidden' }}>
+          <ImageCarousel
+            images={images}
+            height={400}
+            showThumbs={true}
+            showNavigation={true}
+            showPagination={true}
+            autoplay={true}
+            loop={true}
+            borderRadius={3}
+            aspectRatio="16/9"
+          />
+          <CardContent sx={{ p: 3, bgcolor: '#FFF8DC' }}>
+            <Typography variant="h4" sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 700, mb: 2, textAlign: 'center' }}>
               Phòng {room.room_number} - {room.room_type?.name || 'N/A'}
             </Typography>
-            <Grid container spacing={4}>
+            <Grid container spacing={3}>
               <Grid item xs={12} sm={6}>
-                <Box sx={{ mb: 3, p: 2, bgcolor: 'rgba(139, 69, 19, 0.05)', borderRadius: 2 }}>
-                  <Typography variant="h6" sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 600, mb: 2 }}>
+                <Box sx={{ mb: 2, p: 2, bgcolor: 'rgba(139, 69, 19, 0.05)', borderRadius: 2 }}>
+                  <Typography variant="h6" sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 600, mb: 1.5 }}>
                     Thông Tin Phòng
                   </Typography>
-                  <Typography variant="body1" sx={{ fontFamily: 'Inter', mb: 1.5 }}>
+                  <Typography variant="body1" sx={{ fontFamily: 'Inter', mb: 1 }}>
                     <strong>Loại phòng:</strong> {room.room_type?.name || 'N/A'}
                   </Typography>
-                  <Typography variant="body1" sx={{ fontFamily: 'Inter', mb: 1.5 }}>
+                  <Typography variant="body1" sx={{ fontFamily: 'Inter', mb: 1 }}>
                     <strong>Giá mỗi đêm:</strong> {parseFloat(room.room_type?.base_price || 0).toLocaleString('vi-VN')} VND
                   </Typography>
-                  <Typography variant="body1" sx={{ fontFamily: 'Inter', mb: 1.5 }}>
+                  <Typography variant="body1" sx={{ fontFamily: 'Inter', mb: 1 }}>
                     <strong>Sức chứa:</strong> {room.room_type?.max_guests || 'N/A'} người
                   </Typography>
-                  <Box sx={{ fontFamily: 'Inter', mb: 1.5 }}>
+                  <Box sx={{ fontFamily: 'Inter', mb: 1 }}>
                     <strong>Trạng thái:</strong>{' '}
                     <Chip
                       label={room.status === 'available' ? 'Còn trống' : room.status === 'booked' ? 'Đã đặt' : 'Đang sử dụng'}
@@ -118,23 +118,23 @@ const RoomDetail = () => {
                 </Box>
               </Grid>
               <Grid item xs={12} sm={6}>
-                <Box sx={{ mb: 3, p: 2, bgcolor: 'rgba(139, 69, 19, 0.05)', borderRadius: 2 }}>
-                  <Typography variant="h6" sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 600, mb: 2 }}>
+                <Box sx={{ mb: 2, p: 2, bgcolor: 'rgba(139, 69, 19, 0.05)', borderRadius: 2 }}>
+                  <Typography variant="h6" sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 600, mb: 1.5 }}>
                     Mô Tả & Tiện Nghi
                   </Typography>
-                  <Box sx={{ fontFamily: 'Inter', mb: 1.5 }}>
+                  <Box sx={{ fontFamily: 'Inter', mb: 1 }}>
                     <strong>Tiện nghi:</strong>{' '}
                     {room.room_type?.amenities?.split(',').map((amenity, index) => (
                       <Chip key={index} label={amenity.trim()} sx={{ m: 0.5, fontFamily: 'Inter' }} />
                     )) || 'Không có thông tin'}
                   </Box>
-                  <Typography variant="body1" sx={{ fontFamily: 'Inter', mb: 1.5 }}>
+                  <Typography variant="body1" sx={{ fontFamily: 'Inter', mb: 1 }}>
                     <strong>Mô tả:</strong> {room.room_type?.description || 'Không có mô tả'}
                   </Typography>
                 </Box>
               </Grid>
             </Grid>
-            <Box sx={{ mt: 4, display: 'flex', gap: 2, justifyContent: 'center' }}>
+            <Box sx={{ mt: 3, display: 'flex', gap: 1.5, justifyContent: 'center' }}>
               <Button
                 variant="contained"
                 onClick={handleBookRoom}
@@ -142,11 +142,11 @@ const RoomDetail = () => {
                   bgcolor: '#DAA520',
                   '&:hover': { bgcolor: '#B8860B' },
                   fontFamily: 'Inter',
-                  fontSize: '1rem',
-                  px: 4,
-                  py: 1.5,
-                  borderRadius: 3,
-                  boxShadow: '0 4px 12px rgba(218, 165, 32, 0.3)',
+                  fontSize: '0.9rem',
+                  px: 3,
+                  py: 1,
+                  borderRadius: 2,
+                  boxShadow: '0 3px 10px rgba(218, 165, 32, 0.2)',
                 }}
               >
                 Đặt Phòng Ngay
@@ -158,12 +158,12 @@ const RoomDetail = () => {
                   borderColor: '#DAA520',
                   color: '#DAA520',
                   fontFamily: 'Inter',
-                  fontSize: '1rem',
-                  px: 4,
-                  py: 1.5,
-                  borderRadius: 3,
+                  fontSize: '0.9rem',
+                  px: 3,
+                  py: 1,
+                  borderRadius: 2,
                   '&:hover': { borderColor: '#B8860B', color: '#B8860B' },
-                  boxShadow: '0 4px 12px rgba(218, 165, 32, 0.2)',
+                  boxShadow: '0 3px 10px rgba(218, 165, 32, 0.2)',
                 }}
               >
                 Quay Lại

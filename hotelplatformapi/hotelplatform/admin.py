@@ -7,7 +7,7 @@ from django.urls import path
 from django.utils import timezone
 from datetime import datetime, timedelta
 from .models import (
-    User, RoomType, Room, Booking, RoomRental, Payment, DiscountCode, Notification, CustomerType
+    User, RoomType, Room, Booking, RoomRental, Payment, DiscountCode, Notification, CustomerType, RoomImage
 )
 
 # Form tùy chỉnh cho User
@@ -50,6 +50,19 @@ class NotificationForm(forms.ModelForm):
         model = Notification
         fields = '__all__'
 
+# Inline cho RoomImage
+class RoomImageInline(admin.TabularInline):
+    model = RoomImage
+    extra = 1
+    fields = ('image', 'caption', 'is_primary', 'image_preview')
+    readonly_fields = ('image_preview',)
+
+    def image_preview(self, obj):
+        if obj.image:
+            return mark_safe(f'<img src="{obj.image.url}" width="100" height="100" />')
+        return "Không có ảnh"
+    image_preview.short_description = "Xem trước"
+
 # Admin cho User
 class UserAdmin(admin.ModelAdmin):
     list_display = ['id', 'username', 'email', 'full_name', 'role', 'phone', 'customer_type_display', 'total_bookings_display', 'total_spent_display', 'is_active', 'created_at']
@@ -59,7 +72,6 @@ class UserAdmin(admin.ModelAdmin):
     list_per_page = 20
     form = UserForm
     
-    # Fieldsets cho form thêm mới
     add_fieldsets = (
         ('Thông tin cơ bản', {
             'fields': ('username', 'email', 'password', 'full_name', 'role')
@@ -75,7 +87,6 @@ class UserAdmin(admin.ModelAdmin):
         }),
     )
     
-    # Fieldsets cho form chỉnh sửa
     fieldsets = (
         ('Thông tin cơ bản', {
             'fields': ('username', 'email', 'full_name', 'role')
@@ -100,13 +111,12 @@ class UserAdmin(admin.ModelAdmin):
     )
 
     def get_fieldsets(self, request, obj=None):
-        if not obj:  # Tạo mới
+        if not obj:
             return self.add_fieldsets
         return super().get_fieldsets(request, obj)
 
     def save_model(self, request, obj, form, change):
         if not change and 'password' in form.cleaned_data and form.cleaned_data['password']:
-            # Mã hóa mật khẩu khi tạo user mới
             obj.set_password(form.cleaned_data['password'])
         super().save_model(request, obj, form, change)
 
@@ -117,15 +127,14 @@ class UserAdmin(admin.ModelAdmin):
     avatar_view.short_description = "Avatar Preview"
 
     def customer_type_display(self, obj):
-        """Hiển thị loại khách hàng với màu sắc"""
         if obj.role != 'customer':
             return '-'
         
         colors = {
-            'new': '#6c757d',           # Xám
-            'regular': '#17a2b8',       # Xanh dương
-            'vip': '#ffc107',           # Vàng
-            'super_vip': '#dc3545',     # Đỏ
+            'new': '#6c757d',
+            'regular': '#17a2b8',
+            'vip': '#ffc107',
+            'super_vip': '#dc3545',
         }
         color = colors.get(obj.customer_type, '#6c757d')
         type_display = dict(CustomerType.choices).get(obj.customer_type, obj.customer_type)
@@ -134,14 +143,12 @@ class UserAdmin(admin.ModelAdmin):
     customer_type_display.short_description = "Loại KH"
 
     def total_bookings_display(self, obj):
-        """Hiển thị tổng số booking"""
         if obj.role != 'customer':
             return '-'
         return f"{obj.total_bookings} booking"
     total_bookings_display.short_description = "Tổng booking"
 
     def total_spent_display(self, obj):
-        """Hiển thị tổng chi tiêu"""
         if obj.role != 'customer':
             return '-'
         if obj.total_spent == 0:
@@ -152,11 +159,9 @@ class UserAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request)
 
-    # Custom actions
     actions = ['update_customer_stats']
 
     def update_customer_stats(self, request, queryset):
-        """Action để cập nhật thống kê khách hàng"""
         updated_count = 0
         for user in queryset.filter(role='customer'):
             user.refresh_customer_stats()
@@ -197,6 +202,7 @@ class RoomAdmin(admin.ModelAdmin):
     list_filter = ['room_type', 'status', 'created_at']
     list_editable = ['status']
     list_per_page = 20
+    inlines = [RoomImageInline]
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('room_type')
@@ -272,8 +278,7 @@ class RoomRentalAdmin(admin.ModelAdmin):
 
 # Admin cho Payment
 class PaymentAdmin(admin.ModelAdmin):
-    list_display = ['id', 'rental_customer', 'amount_display', 'payment_method', 'status', 'paid_at', 'transaction_id'
-]
+    list_display = ['id', 'rental_customer', 'amount_display', 'payment_method', 'status', 'paid_at', 'transaction_id']
     search_fields = ['rental__customer__username', 'transaction_id']
     list_filter = ['payment_method', 'status', 'paid_at']
     readonly_fields = ['transaction_id', 'amount_display']
@@ -323,6 +328,23 @@ class NotificationAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('user')
 
+# Admin riêng cho RoomImage
+class RoomImageAdmin(admin.ModelAdmin):
+    list_display = ['id', 'room', 'caption', 'is_primary', 'created_at', 'image_preview']
+    search_fields = ['room__room_number', 'caption']
+    list_filter = ['is_primary', 'created_at']
+    readonly_fields = ['image_preview']
+    list_per_page = 20
+
+    def image_preview(self, obj):
+        if obj.image:
+            return mark_safe(f'<img src="{obj.image.url}" width="100" height="100" />')
+        return "Không có ảnh"
+    image_preview.short_description = "Xem trước"
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('room')
+
 # Custom Admin Site
 class HotelAdminSite(admin.AdminSite):
     site_header = 'Hệ Thống Quản Lý Khách Sạn'
@@ -336,18 +358,15 @@ class HotelAdminSite(admin.AdminSite):
         ] + super().get_urls()
 
     def hotel_stats(self, request):
-        # Thống kê tổng quan
         total_rooms = Room.objects.count()
         available_rooms = Room.objects.filter(status='available').count()
         occupied_rooms = Room.objects.filter(status='occupied').count()
         booked_rooms = Room.objects.filter(status='booked').count()
         
-        # Thống kê đặt phòng
         today = timezone.now().date()
         bookings_today = Booking.objects.filter(created_at__date=today).count()
         total_bookings = Booking.objects.count()
         
-        # Thống kê khách hàng
         total_customers = User.objects.filter(role='customer').count()
         new_customers_this_month = User.objects.filter(
             role='customer',
@@ -355,32 +374,27 @@ class HotelAdminSite(admin.AdminSite):
             created_at__year=today.year
         ).count()
         
-        # Thống kê khách hàng theo loại
         customer_type_stats = User.objects.filter(role='customer').values('customer_type').annotate(
             count=Count('id'),
             total_bookings_sum=Sum('total_bookings'),
             total_spent_sum=Sum('total_spent')
         ).order_by('-total_spent_sum')
         
-        # Thống kê doanh thu
         total_revenue = Payment.objects.filter(status=True).aggregate(
             total=Sum('amount')
         )['total'] or 0
         
-        # Doanh thu tháng này
         revenue_this_month = Payment.objects.filter(
             status=True,
             paid_at__month=today.month,
             paid_at__year=today.year
         ).aggregate(total=Sum('amount'))['total'] or 0
         
-        # Thống kê theo loại phòng
         room_type_stats = RoomType.objects.annotate(
             room_count=Count('rooms'),
             booking_count=Count('rooms__bookings')
         ).values('name', 'room_count', 'booking_count')
         
-        # Thống kê đặt phòng theo trạng thái
         booking_status_stats = Booking.objects.values('status').annotate(
             count=Count('id')
         ).order_by('status')
@@ -402,7 +416,6 @@ class HotelAdminSite(admin.AdminSite):
         })
 
     def revenue_stats(self, request):
-        # Thống kê doanh thu theo tháng
         current_year = timezone.now().year
         monthly_revenue = Payment.objects.filter(
             status=True,
@@ -413,7 +426,6 @@ class HotelAdminSite(admin.AdminSite):
             total=Sum('amount')
         ).order_by('month')
         
-        # Thống kê doanh thu theo phương thức thanh toán
         payment_method_stats = Payment.objects.filter(status=True).values(
             'payment_method'
         ).annotate(
@@ -421,7 +433,6 @@ class HotelAdminSite(admin.AdminSite):
             count=Count('id')
         ).order_by('payment_method')
         
-        # Top khách hàng
         top_customers = User.objects.filter(
             role='customer',
             rentals__payments__status=True
@@ -448,6 +459,7 @@ admin_site.register(RoomRental, RoomRentalAdmin)
 admin_site.register(Payment, PaymentAdmin)
 admin_site.register(DiscountCode, DiscountCodeAdmin)
 admin_site.register(Notification, NotificationAdmin)
+admin_site.register(RoomImage, RoomImageAdmin)
 
 # Đăng ký với admin mặc định
 admin.site.register(User, UserAdmin)
@@ -458,3 +470,4 @@ admin.site.register(RoomRental, RoomRentalAdmin)
 admin.site.register(Payment, PaymentAdmin)
 admin.site.register(DiscountCode, DiscountCodeAdmin)
 admin.site.register(Notification, NotificationAdmin)
+admin.site.register(RoomImage, RoomImageAdmin)
