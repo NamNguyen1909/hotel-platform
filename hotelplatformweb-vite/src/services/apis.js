@@ -210,12 +210,6 @@ export const endpoints = {
     unread: '/notifications/unread/',
   },
   
-  // QR Code endpoints
-  qr: {
-    generate: '/api/qr-generate/',
-    scan: '/api/qr-scan/',
-  },
-  
   // Statistics endpoints
   stats: {
     overview: '/api/stats/',

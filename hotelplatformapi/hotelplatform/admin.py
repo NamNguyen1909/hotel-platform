@@ -212,7 +212,7 @@ class BookingAdmin(admin.ModelAdmin):
     list_display = ['id', 'customer', 'customer_phone', 'check_in_date', 'check_out_date', 'total_price', 'guest_count', 'status', 'created_at']
     search_fields = ['customer__username', 'customer__full_name', 'customer__phone']
     list_filter = ['status', 'check_in_date', 'check_out_date', 'created_at']
-    readonly_fields = ['qr_code_view', 'total_price_display']
+    readonly_fields = ['total_price_display']
     form = BookingForm
     list_per_page = 20
     date_hierarchy = 'check_in_date'
@@ -220,12 +220,6 @@ class BookingAdmin(admin.ModelAdmin):
     def customer_phone(self, obj):
         return obj.customer.phone if obj.customer.phone else 'Chưa có'
     customer_phone.short_description = "Số điện thoại"
-
-    def qr_code_view(self, booking):
-        if booking.qr_code:
-            return mark_safe(f"<img src='{booking.qr_code.url}' width='100' />")
-        return "Không có QR code"
-    qr_code_view.short_description = "QR Code"
 
     def total_price_display(self, obj):
         if obj.total_price is None:
@@ -245,9 +239,6 @@ class BookingAdmin(admin.ModelAdmin):
         }),
         ('Yêu cầu đặc biệt', {
             'fields': ('special_requests',)
-        }),
-        ('QR Code', {
-            'fields': ('qr_code', 'qr_code_view')
         })
     )
 

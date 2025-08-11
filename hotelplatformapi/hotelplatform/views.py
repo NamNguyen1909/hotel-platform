@@ -51,7 +51,7 @@ from .permissions import (
     IsAdminUser, IsOwnerUser, IsStaffUser, IsCustomerUser, IsAdminOrOwner, IsAdminOrOwnerOrStaff,
     IsBookingOwner, IsRoomRentalOwner, IsPaymentOwner, IsNotificationOwner, CanManageRooms,
     CanManageBookings, CanManagePayments, CanCreateDiscountCode, CanViewStats, CanCheckIn,
-    CanCheckOut, CanConfirmBooking, CanGenerateQRCode, CanUpdateProfile, CanCancelUpdateBooking,
+    CanCheckOut, CanConfirmBooking, CanUpdateProfile, CanCancelUpdateBooking,
     CanCreateNotification, CanModifyRoomType, CanManageCustomers, CanManageStaff, CanAccessAllBookings,
     CanCreateBooking
 )
@@ -1668,106 +1668,6 @@ class NotificationViewSet(viewsets.ViewSet, generics.ListAPIView, generics.Retri
         """Lấy số lượng thông báo chưa đọc"""
         unread_count = Notification.objects.filter(user=request.user, is_read=False).count()
         return Response({"unread_count": unread_count})
-
-# ================================ QR CODE & CHECK-IN ================================
-
-class QRCodePaymentView(APIView):
-    """
-    API để quét QR code và xử lý thanh toán hóa đơn
-    """
-    permission_classes = [IsCustomerUser]
-
-    def post(self, request):
-        """
-        Quét QR code để thanh toán:
-        1. Lấy uuid từ QR code
-        2. Tìm booking và RoomRental liên kết
-        3. Tạo Payment và xử lý thanh toán
-        """
-        uuid_str = request.data.get('uuid')
-        payment_method = request.data.get('payment_method', 'vnpay')
-
-        if not uuid_str:
-            return Response({"error": "Cần cung cấp UUID từ QR code"}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            booking = Booking.objects.get(uuid=uuid_str)
-            rental = RoomRental.objects.filter(booking=booking).first()
-            if not rental:
-                return Response({"error": "Không tìm thấy phiếu thuê phòng liên kết"}, status=status.HTTP_400_BAD_REQUEST)
-
-            payment = rental.payments.filter(status=False).first()
-            if payment:
-                return Response({"error": "Hóa đơn đang chờ thanh toán"}, status=status.HTTP_400_BAD_REQUEST)
-
-            with transaction.atomic():
-                payment = Payment.objects.create(
-                    rental=rental,
-                    customer=rental.customer,
-                    amount=rental.total_price,
-                    payment_method=payment_method,
-                    status=False,
-                    transaction_id=f"TRANS-{timezone.now().strftime('%Y%m%d%H%M%S')}"
-                )
-
-                if payment_method.lower() == 'vnpay':
-                    request.GET = request.GET.copy()
-                    request.GET['amount'] = str(rental.total_price)
-                    payment_response = create_payment_url(request)
-                    payment_url = payment_response.json['payment_url']
-                    return Response({
-                        "message": "Yêu cầu thanh toán được tạo",
-                        "payment": PaymentSerializer(payment).data,
-                        "payment_url": payment_url
-                    })
-
-                payment.status = True
-                payment.paid_at = timezone.now()
-                payment.save()
-
-                return Response({
-                    "message": "Thanh toán thành công",
-                    "payment": PaymentSerializer(payment).data
-                })
-
-        except Booking.DoesNotExist:
-            return Response({"error": "Không tìm thấy booking với UUID này"}, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-class QRCodeGenerateView(APIView):
-    """
-    API để tạo QR code cho booking (chỉ admin/staff)
-    """
-    permission_classes = [CanGenerateQRCode]
-
-    def post(self, request):
-        """
-        Tạo QR code cho booking
-        """
-        booking_id = request.data.get('booking_id')
-        if not booking_id:
-            return Response({"error": "Cần cung cấp booking_id"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            booking = Booking.objects.get(id=booking_id)
-            
-            if booking.status != BookingStatus.CONFIRMED:
-                return Response({"error": "Booking chưa được xác nhận"}, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Generate QR code (sẽ được xử lý bởi method trong model)
-            qr_code_url = booking.generate_qr_code()
-            
-            return Response({
-                "message": "QR code đã được tạo",
-                "qr_code_url": qr_code_url,
-                "booking": BookingDetailSerializer(booking).data
-            })
-        
-        except Booking.DoesNotExist:
-            return Response({"error": "Không tìm thấy booking"}, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 # ================================ STATS & ANALYTICS ================================
 
