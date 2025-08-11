@@ -14,8 +14,9 @@ import Rooms from './pages/Rooms';
 import MyBookings from './pages/MyBookings';
 import Payments from './pages/Payments';
 import RoomsManagement from './pages/RoomsManagement';
-import StaffsManagement from './pages/StaffsManagement';
 import CustomersManagement from './pages/CustomersManagement';
+
+import StaffsManagement from './pages/StaffsManagement';
 import Bookings from './pages/Bookings';
 import Invoices from './pages/Invoices';
 import Analytics from './pages/Analytics';
