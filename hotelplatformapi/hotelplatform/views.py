@@ -45,7 +45,7 @@ from .models import (
 from .serializers import (
     UserSerializer, UserDetailSerializer, UserListSerializer, RoomTypeSerializer, RoomSerializer, RoomDetailSerializer,
     BookingSerializer, BookingDetailSerializer, RoomRentalSerializer, RoomRentalDetailSerializer,
-    PaymentSerializer, DiscountCodeSerializer, NotificationSerializer, RoomImageSerializer
+    PaymentSerializer, DiscountCodeSerializer, NotificationSerializer, RoomImageSerializer, InvoiceSerializer
 )
 from .permissions import (
     IsAdminUser, IsOwnerUser, IsStaffUser, IsCustomerUser, IsAdminOrOwner, IsAdminOrOwnerOrStaff,
@@ -2601,7 +2601,7 @@ class TaskStatusView(APIView):
 
 class InvoiceViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
     queryset = Payment.objects.all()
-    serializer_class = PaymentSerializer
+    serializer_class = InvoiceSerializer 
     permission_classes = [IsAuthenticated, IsPaymentOwner | CanManagePayments]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['customer__full_name', 'status']
@@ -2612,4 +2612,4 @@ class InvoiceViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         user = self.request.user
         if user.role in ['admin', 'owner', 'staff']:
             return Payment.objects.all()
-        return Payment.objects.filter(customer=user)
+        return Payment.objects.filter(rental__customer=user)

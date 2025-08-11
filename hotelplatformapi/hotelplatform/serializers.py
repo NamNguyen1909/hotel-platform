@@ -760,3 +760,8 @@ class RoomDetailSerializer(ModelSerializer):
             'current_bookings', 'current_rentals', 'images', 'primary_image'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'current_bookings', 'current_rentals', 'images', 'primary_image']
+
+class InvoiceSerializer(PaymentSerializer):
+    def get_amount(self, obj):
+        # Chỉ lấy amount đã lưu trong cơ sở dữ liệu
+        return str(obj.amount)
