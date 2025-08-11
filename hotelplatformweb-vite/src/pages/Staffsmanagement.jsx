@@ -1,6 +1,6 @@
 import React from 'react';
 import { AdminPanelSettings as AdminIcon } from '@mui/icons-material';
-import UserList from '../components/UserList';
+import UserList from '../components/UserList.jsx';
 
 const StaffsManagement = () => {
   return (

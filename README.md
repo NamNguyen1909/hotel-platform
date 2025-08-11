@@ -354,3 +354,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 [![⭐ Star this project](https://img.shields.io/github/stars/NamNguyen1909/hotel-platform?style=social)](https://github.com/NamNguyen1909/hotel-platform)
 
 </div>
+
+
+https://hotel-platform-api.onrender.com/api/tasks/status/
