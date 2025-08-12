@@ -2061,14 +2061,8 @@ def vnpay_redirect(request):
         # Khi thành công: về trang bookings với thông báo thành công
         frontend_url = f"{frontend_base_url}/staff/bookings?payment_result=success&message={urllib.parse.quote(message)}&auto_refresh=true"
     else:
-        # Khi thất bại: về trang bookings với modal checkout mở lại để user chọn lại
-        try:
-            payment = Payment.objects.get(transaction_id=vnp_TxnRef)
-            booking_id = payment.rental.booking.id
-            frontend_url = f"{frontend_base_url}/staff/bookings?payment_result=failed&message={urllib.parse.quote(message)}&booking_id={booking_id}&retry_checkout=true&auto_refresh=true"
-        except Payment.DoesNotExist:
-            # Fallback nếu không tìm thấy payment
-            frontend_url = f"{frontend_base_url}/staff/bookings?payment_result=failed&message={urllib.parse.quote(message)}&auto_refresh=true"
+        # Khi thất bại: về trang bookings của staff với thông báo thất bại
+        frontend_url = f"{frontend_base_url}/staff/bookings?payment_result=failed&message={urllib.parse.quote(message)}&auto_refresh=true"
     
     # Always redirect to frontend
     return HttpResponse(f"""
