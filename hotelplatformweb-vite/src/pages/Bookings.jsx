@@ -97,6 +97,8 @@ const Bookings = () => {
     const paymentResult = searchParams.get('payment_result');
     const message = searchParams.get('message');
     const autoRefresh = searchParams.get('auto_refresh');
+    const retryCheckout = searchParams.get('retry_checkout');
+    const bookingId = searchParams.get('booking_id');
     
     if (paymentResult || autoRefresh) {
       // Nếu có auto_refresh, refresh token để duy trì session
@@ -104,6 +106,21 @@ const Bookings = () => {
         authUtils.refreshToken().catch(error => {
           console.warn('Failed to refresh token after payment:', error);
           // Không navigate về login ngay, để user thấy kết quả thanh toán trước
+        });
+      }
+      
+      // Hiển thị thông báo kết quả thanh toán
+      if (paymentResult === 'success') {
+        setSnackbar({
+          open: true,
+          message: message || 'Thanh toán thành công!',
+          severity: 'success'
+        });
+      } else if (paymentResult === 'failed') {
+        setSnackbar({
+          open: true,
+          message: message || 'Thanh toán thất bại!',
+          severity: 'error'
         });
       }
       
@@ -115,6 +132,16 @@ const Bookings = () => {
       if (paymentResult || autoRefresh) {
         // Trigger a fresh data fetch
         setPaginationModel(prev => ({ ...prev, page: prev.page }));
+      }
+      
+      // Nếu có retry_checkout và booking_id, mở lại modal checkout
+      if (retryCheckout === 'true' && bookingId) {
+        setTimeout(() => {
+          setCheckoutDialog({
+            open: true,
+            bookingId: parseInt(bookingId)
+          });
+        }, 1000); // Delay 1s để user nhìn thấy thông báo lỗi trước
       }
     }
   }, [location]);

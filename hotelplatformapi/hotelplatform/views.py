@@ -2034,6 +2034,21 @@ def vnpay_redirect(request):
         else:
             payment.status = False
             payment.save()
+            
+            # Tạo notification cho user về thanh toán thất bại
+            try:
+                rental = payment.rental
+                booking = rental.booking
+                Notification.objects.create(
+                    user=booking.customer,
+                    notification_type='payment_failed',
+                    title='Thanh toán VNPay thất bại',
+                    message=f'Thanh toán VNPay thất bại cho phòng {", ".join([room.room_number for room in booking.rooms.all()])}. Lý do: {message}. Vui lòng thử lại hoặc chọn thanh toán bằng tiền mặt.'
+                )
+                logger.info(f"Created VNPay failure notification for booking {booking.id}")
+            except Exception as notification_error:
+                logger.error(f"Failed to create VNPay failure notification: {notification_error}")
+            
             logger.warning(f"VNPay payment failed for transaction {vnp_TxnRef}: {message}")
     except Payment.DoesNotExist:
         logger.error(f"Payment not found for transaction {vnp_TxnRef}")
@@ -2041,7 +2056,19 @@ def vnpay_redirect(request):
     # Tạo frontend redirect URL với thông tin booking để không mất context
     # Sử dụng environment variable cho frontend URL
     frontend_base_url = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
-    frontend_url = f"{frontend_base_url}/staff/bookings?payment_result={'success' if payment_success else 'failed'}&message={urllib.parse.quote(message)}&auto_refresh=true"
+    
+    if payment_success:
+        # Khi thành công: về trang bookings với thông báo thành công
+        frontend_url = f"{frontend_base_url}/staff/bookings?payment_result=success&message={urllib.parse.quote(message)}&auto_refresh=true"
+    else:
+        # Khi thất bại: về trang bookings với modal checkout mở lại để user chọn lại
+        try:
+            payment = Payment.objects.get(transaction_id=vnp_TxnRef)
+            booking_id = payment.rental.booking.id
+            frontend_url = f"{frontend_base_url}/staff/bookings?payment_result=failed&message={urllib.parse.quote(message)}&booking_id={booking_id}&retry_checkout=true&auto_refresh=true"
+        except Payment.DoesNotExist:
+            # Fallback nếu không tìm thấy payment
+            frontend_url = f"{frontend_base_url}/staff/bookings?payment_result=failed&message={urllib.parse.quote(message)}&auto_refresh=true"
     
     # Always redirect to frontend
     return HttpResponse(f"""
