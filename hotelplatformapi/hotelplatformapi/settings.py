@@ -286,9 +286,6 @@ CORS_ALLOW_METHODS = [
 # Additional CORS settings for better compatibility
 CORS_PREFLIGHT_MAX_AGE = 86400  # 24 hours
 
-# Force CORS to be applied to all responses
-CORS_REPLACE_HTTPS_REFERER = True
-
 # Additional debugging
 print(f"🔧 CORS_ALLOW_ALL_ORIGINS: {locals().get('CORS_ALLOW_ALL_ORIGINS', 'Not set')}")
 print(f"🔧 CORS_ALLOWED_ORIGINS: {locals().get('CORS_ALLOWED_ORIGINS', 'Not set')}")
