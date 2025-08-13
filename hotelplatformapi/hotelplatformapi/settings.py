@@ -231,6 +231,12 @@ if not DEBUG:
         'CORS_ALLOWED_ORIGINS', 
         'https://hotel-platform-web.onrender.com'
     ).split(',')
+    # Ensure no trailing slashes or extra spaces
+    CORS_ALLOWED_ORIGINS = [origin.strip().rstrip('/') for origin in CORS_ALLOWED_ORIGINS]
+    
+    # For debugging - temporarily allow all origins in production
+    # Remove this line after confirming CORS is working
+    CORS_ALLOW_ALL_ORIGINS = True
 else:
     # Development CORS settings
     CORS_ALLOWED_ORIGINS = [
@@ -258,6 +264,20 @@ CORS_EXPOSE_HEADERS = [
     'x-csrftoken',
 ]
 CORS_PREFLIGHT_MAX_AGE = 86400  # 24 hours
+
+# Additional CORS settings for better compatibility
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+# Debug CORS settings (only in development)
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
 
 CLIENT_ID = 'kycIFibcgbEopjJ9esSVPU5PTECw6z4jAqMZ5j9w'
 CLIENT_SECRET = 'TI8kzKgylZvAmqmSoi0SpgYt4z0pBS3SzNEEEPey0tVpYXRBQJgfrsYQzakk433ONKTc8WF9q3FnZR0XtDI1aOkj5bsIJcL9hZvpHaxJH9vXOUklrGXaiPivlJPOYuN4'

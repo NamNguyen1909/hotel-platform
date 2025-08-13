@@ -86,6 +86,7 @@ export const endpoints = {
   // Authentication endpoints
   auth: {
     login: '/api/auth/token/',
+    token: '/api/auth/token/', // Alias for login for backward compatibility
     register: '/users/', // Registration endpoint
     refresh: '/api/auth/token/refresh/',
     logout: '/api/auth/token/blacklist/',
