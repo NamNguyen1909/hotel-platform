@@ -10,7 +10,7 @@ const EmployeeManagement = () => {
       description="Quản lý thông tin và tài khoản nhân viên"
       icon={<BadgeIcon />}
       showRole={true}
-      showStats={true}
+      showStats={false}
     />
   );
 };
