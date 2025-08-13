@@ -4,6 +4,8 @@ from django.urls import include, path, re_path
 from rest_framework import permissions
 from hotelplatform.admin import admin_site  # Import custom admin site
 from hotelplatform import views  # Import views for health check
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
@@ -13,6 +15,27 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
     TokenBlacklistView,
 )
+
+# Custom JWT views with CORS support
+class CORSTokenObtainPairView(TokenObtainPairView):
+    @csrf_exempt
+    def dispatch(self, request, *args, **kwargs):
+        response = super().dispatch(request, *args, **kwargs)
+        # Add CORS headers for JWT endpoint
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        return response
+
+class CORSTokenRefreshView(TokenRefreshView):
+    @csrf_exempt
+    def dispatch(self, request, *args, **kwargs):
+        response = super().dispatch(request, *args, **kwargs)
+        # Add CORS headers for JWT endpoint
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        return response
 
 # schema view for Swagger documentation
 schema_view = get_schema_view( 
@@ -27,6 +50,18 @@ schema_view = get_schema_view(
     permission_classes=(permissions.AllowAny,),
 )
 
+# OPTIONS handler for preflight requests
+@csrf_exempt
+@require_http_methods(["OPTIONS"])
+def handle_options(request):
+    from django.http import HttpResponse
+    response = HttpResponse()
+    response['Access-Control-Allow-Origin'] = '*'
+    response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+    response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+    response['Access-Control-Max-Age'] = '3600'
+    return response
+
 urlpatterns = [
     # Health check endpoint (simple)
     path('health/', views.health_check, name='health-check'),
@@ -38,9 +73,9 @@ urlpatterns = [
     # App URLs
     path('', include('hotelplatform.urls')),  # Root URLs
     
-    # JWT authentication endpoints
-    path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'), 
-    path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    # JWT authentication endpoints with CORS support
+    path('api/auth/token/', CORSTokenObtainPairView.as_view(), name='token_obtain_pair'), 
+    path('api/auth/token/refresh/', CORSTokenRefreshView.as_view(), name='token_refresh'),
     path('api/auth/token/blacklist/', TokenBlacklistView.as_view(), name='token_blacklist'),
     
     # OAuth2 endpoints (for future third-party authentication)

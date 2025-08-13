@@ -225,17 +225,77 @@ REST_FRAMEWORK = {
 # CORS Configuration for production and development
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in development
 
+# CORS Headers Configuration
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    'x-api-key',  # For cron tasks
+]
+
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+# Allow credentials for cookies/sessions - only in development
+CORS_ALLOW_CREDENTIALS = DEBUG
+
+# Additional CORS settings for preflight requests
+CORS_PREFLIGHT_MAX_AGE = 86400  # 24 hours
+
+# CSRF exemption for API endpoints
+CSRF_TRUSTED_ORIGINS = []
+
 if not DEBUG:
     # Production CORS settings
     CORS_ALLOWED_ORIGINS = os.environ.get(
         'CORS_ALLOWED_ORIGINS', 
         'https://hotel-platform-web.onrender.com'
     ).split(',')
+    
+    # Remove any empty strings from the list
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in CORS_ALLOWED_ORIGINS if origin.strip()]
+    
+    # Also add origin patterns for more flexibility
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r"^https://.*\.onrender\.com$",
+    ]
+    
+    # Production specific settings
+    CORS_ALLOW_ALL_ORIGINS = False  # Ensure this is False in production
+    
+    # CSRF trusted origins for production
+    CSRF_TRUSTED_ORIGINS = [
+        'https://hotel-platform-web.onrender.com',
+        'https://hotel-platform-api.onrender.com',
+    ]
 else:
     # Development CORS settings
     CORS_ALLOWED_ORIGINS = [
         'http://localhost:3000',  # React dev server
         'http://localhost:5173',  # Vite dev server
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:5173',
+    ]
+    
+    # Development: Allow all for easier debugging
+    CORS_ALLOW_ALL_ORIGINS = True
+    
+    # CSRF trusted origins for development
+    CSRF_TRUSTED_ORIGINS = [
+        'http://localhost:3000',
+        'http://localhost:5173',
         'http://127.0.0.1:3000',
         'http://127.0.0.1:5173',
     ]

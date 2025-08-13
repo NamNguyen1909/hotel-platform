@@ -6,6 +6,7 @@ import os
 from django.shortcuts import redirect, render
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 import urllib
 import logging
 from decimal import Decimal, ROUND_HALF_UP
@@ -15,9 +16,17 @@ logger = logging.getLogger(__name__)
 
 # Health check endpoint for Render deployment
 @csrf_exempt
+@require_http_methods(["GET", "HEAD", "OPTIONS"])
 def health_check(request):
     """Simple health check endpoint for Render.com deployment"""
-    return JsonResponse({'status': 'healthy'}, status=200)
+    response = JsonResponse({'status': 'healthy'}, status=200)
+    
+    # Add CORS headers manually if needed
+    response['Access-Control-Allow-Origin'] = '*'
+    response['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
+    response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    
+    return response
 
 # REST Framework imports
 from rest_framework import viewsets, status, generics
