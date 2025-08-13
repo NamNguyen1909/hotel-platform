@@ -11,7 +11,7 @@ import {
   Alert,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { api } from '../services/apis'; // Use configured API instance instead of raw axios
 
 const Payments = () => {
   const [payments, setPayments] = useState([]);
@@ -23,11 +23,7 @@ const Payments = () => {
     const fetchPayments = async () => {
       try {
         setLoading(true);
-        const response = await axios.get('/api/payments/', {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
-          },
-        });
+        const response = await api.get('/api/payments/');
         setPayments(response.data);
         setError(null);
       } catch (err) {
@@ -43,11 +39,7 @@ const Payments = () => {
 
   const handlePayNow = async (paymentId) => {
     try {
-      const response = await axios.get(`/vnpay/create-payment/?amount=${payments.find(p => p.id === paymentId).amount}`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
+      const response = await api.get(`/vnpay/create-payment/?amount=${payments.find(p => p.id === paymentId).amount}`);
       window.location.href = response.data.payment_url;
     } catch (err) {
       console.error('Error creating payment URL:', err);
