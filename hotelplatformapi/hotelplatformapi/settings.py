@@ -239,14 +239,15 @@ if DEBUG:
         'http://127.0.0.1:5173',
     ]
 else:
-    # Production: Specific origins only
-    CORS_ALLOW_ALL_ORIGINS = False
-    CORS_ALLOW_CREDENTIALS = False  # Disable credentials in production for security
+    # Production: Temporarily allow all origins for debugging CORS issues
+    CORS_ALLOW_ALL_ORIGINS = True  # Temporarily enabled for debugging
+    CORS_ALLOW_CREDENTIALS = False  # Keep credentials disabled for security
     
-    # Production CORS settings
+    # Production CORS settings (backup)
     cors_origins = os.environ.get('CORS_ALLOWED_ORIGINS', 'https://hotel-platform-web.onrender.com')
     CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins.split(',') if origin.strip()]
-    print(f"🔧 CORS: Production mode - allowed origins: {CORS_ALLOWED_ORIGINS}")
+    print(f"🔧 CORS: Production mode - TEMPORARILY allowing ALL origins for debugging")
+    print(f"🔧 CORS: Configured origins (when restricted): {CORS_ALLOWED_ORIGINS}")
     
     # Also add origin patterns for more flexibility
     CORS_ALLOWED_ORIGIN_REGEXES = [
