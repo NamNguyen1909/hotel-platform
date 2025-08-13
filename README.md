@@ -586,6 +586,6 @@ For inquiries, support, or collaboration opportunities, please contact:
 
 **🏨 Built with ❤️ for modern hotel management**
 
-[![GitHub stars](https://img.shields.io/github/stars/NamNguyen1909/hotel-platform?style=social&label=Star)](https://github.com/NamNguyen1909/hotel-platform)
+[![⭐ Star this project](https://img.shields.io/github/stars/NamNguyen1909/hotel-platform?style=social)](https://github.com/NamNguyen1909/hotel-platform)
 
 </div>

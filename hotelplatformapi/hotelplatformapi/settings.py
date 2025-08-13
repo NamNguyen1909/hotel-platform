@@ -222,51 +222,23 @@ REST_FRAMEWORK = {
     ],
 }
 
-# CORS Configuration - Fix login CORS error
-CORS_ALLOW_ALL_ORIGINS = True  # Temporarily allow all origins to fix CORS
-CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_METHODS = [
-    'DELETE',
-    'GET',
-    'OPTIONS', 
-    'PATCH',
-    'POST',
-    'PUT',
-]
-CORS_ALLOWED_HEADERS = [
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'content-type',
-    'dnt',
-    'origin',
-    'user-agent',
-    'x-csrftoken',
-    'x-requested-with',
-]
+# CORS Configuration for production and development
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in development
 
-# CORS Configuration - Fix login CORS error
-CORS_ALLOW_ALL_ORIGINS = True  # Temporarily allow all origins to fix CORS
-CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_METHODS = [
-    'DELETE',
-    'GET',
-    'OPTIONS', 
-    'PATCH',
-    'POST',
-    'PUT',
-]
-CORS_ALLOWED_HEADERS = [
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'content-type',
-    'dnt',
-    'origin',
-    'user-agent',
-    'x-csrftoken',
-    'x-requested-with',
-]
+if not DEBUG:
+    # Production CORS settings
+    CORS_ALLOWED_ORIGINS = os.environ.get(
+        'CORS_ALLOWED_ORIGINS', 
+        'https://hotel-platform-web.onrender.com'
+    ).split(',')
+else:
+    # Development CORS settings
+    CORS_ALLOWED_ORIGINS = [
+        'http://localhost:3000',  # React dev server
+        'http://localhost:5173',  # Vite dev server
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:5173',
+    ]
 
 CLIENT_ID = 'kycIFibcgbEopjJ9esSVPU5PTECw6z4jAqMZ5j9w'
 CLIENT_SECRET = 'TI8kzKgylZvAmqmSoi0SpgYt4z0pBS3SzNEEEPey0tVpYXRBQJgfrsYQzakk433ONKTc8WF9q3FnZR0XtDI1aOkj5bsIJcL9hZvpHaxJH9vXOUklrGXaiPivlJPOYuN4'

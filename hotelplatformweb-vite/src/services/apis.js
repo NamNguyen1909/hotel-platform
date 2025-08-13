@@ -10,7 +10,6 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true, // Enable cookies and credentials for CORS
 });
 
 // Request interceptor để thêm token vào header
@@ -44,8 +43,6 @@ api.interceptors.response.use(
           console.log('Attempting to refresh token...');
           const response = await axios.post(`${import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'}/api/auth/token/refresh/`, {
             refresh: refreshToken
-          }, {
-            withCredentials: true // Enable credentials for token refresh
           });
           
           const { access } = response.data;
@@ -86,7 +83,6 @@ export const endpoints = {
   // Authentication endpoints
   auth: {
     login: '/api/auth/token/',
-    token: '/api/auth/token/', // Alias for login for backward compatibility
     register: '/users/', // Registration endpoint
     refresh: '/api/auth/token/refresh/',
     logout: '/api/auth/token/blacklist/',
@@ -318,4 +314,3 @@ export const getUnreadNotifications = async () => {
 };
 
 export default api;
-export { api }; // Named export for convenience

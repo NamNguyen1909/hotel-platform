@@ -39,7 +39,7 @@ const authUtils = {
   // Login user
   login: async (email, password) => {
     try {
-      const response = await api.post(endpoints.auth.login, {
+      const response = await api.post(endpoints.auth.token, {
         email,
         password,
       });
