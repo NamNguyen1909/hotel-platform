@@ -18,24 +18,10 @@ from rest_framework_simplejwt.views import (
 
 # Custom JWT views with CORS support
 class CORSTokenObtainPairView(TokenObtainPairView):
-    @csrf_exempt
-    def dispatch(self, request, *args, **kwargs):
-        response = super().dispatch(request, *args, **kwargs)
-        # Add CORS headers for JWT endpoint
-        response['Access-Control-Allow-Origin'] = '*'
-        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-        return response
+    pass  # Let corsheaders middleware handle CORS
 
 class CORSTokenRefreshView(TokenRefreshView):
-    @csrf_exempt
-    def dispatch(self, request, *args, **kwargs):
-        response = super().dispatch(request, *args, **kwargs)
-        # Add CORS headers for JWT endpoint
-        response['Access-Control-Allow-Origin'] = '*'
-        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-        return response
+    pass  # Let corsheaders middleware handle CORS
 
 # schema view for Swagger documentation
 schema_view = get_schema_view( 

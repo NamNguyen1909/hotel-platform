@@ -211,7 +211,7 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',  # JWT (primary)
         'oauth2_provider.contrib.rest_framework.OAuth2Authentication',  # OAuth2 (for future use)
-        'rest_framework.authentication.SessionAuthentication',  # Session (for admin)
+        # Session auth removed to avoid CSRF conflicts with CORS
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',  # Mặc định cho phép tất cả
@@ -222,10 +222,44 @@ REST_FRAMEWORK = {
     ],
 }
 
-# CORS Configuration for production and development
-CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in development
+# CORS Configuration - Simplified and robust
+print(f"🔧 Django DEBUG mode: {DEBUG}")
 
-# CORS Headers Configuration
+if DEBUG:
+    # Development: Allow all origins for easier development
+    CORS_ALLOW_ALL_ORIGINS = True
+    CORS_ALLOW_CREDENTIALS = True
+    print("🔧 CORS: Development mode - allowing all origins")
+    
+    # CSRF trusted origins for development
+    CSRF_TRUSTED_ORIGINS = [
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:5173',
+    ]
+else:
+    # Production: Specific origins only
+    CORS_ALLOW_ALL_ORIGINS = False
+    CORS_ALLOW_CREDENTIALS = False  # Disable credentials in production for security
+    
+    # Production CORS settings
+    cors_origins = os.environ.get('CORS_ALLOWED_ORIGINS', 'https://hotel-platform-web.onrender.com')
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins.split(',') if origin.strip()]
+    print(f"🔧 CORS: Production mode - allowed origins: {CORS_ALLOWED_ORIGINS}")
+    
+    # Also add origin patterns for more flexibility
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r"^https://.*\.onrender\.com$",
+    ]
+    
+    # CSRF trusted origins for production
+    CSRF_TRUSTED_ORIGINS = [
+        'https://hotel-platform-web.onrender.com',
+        'https://hotel-platform-api-sduw.onrender.com',
+    ] + CORS_ALLOWED_ORIGINS
+
+# CORS Headers Configuration - Allow common headers
 CORS_ALLOW_HEADERS = [
     'accept',
     'accept-encoding',
@@ -236,9 +270,10 @@ CORS_ALLOW_HEADERS = [
     'user-agent',
     'x-csrftoken',
     'x-requested-with',
-    'x-api-key',  # For cron tasks
+    'x-api-key',
 ]
 
+# CORS Methods Configuration - Allow all standard methods
 CORS_ALLOW_METHODS = [
     'DELETE',
     'GET',
@@ -248,57 +283,16 @@ CORS_ALLOW_METHODS = [
     'PUT',
 ]
 
-# Allow credentials for cookies/sessions - only in development
-CORS_ALLOW_CREDENTIALS = DEBUG
-
-# Additional CORS settings for preflight requests
+# Additional CORS settings for better compatibility
 CORS_PREFLIGHT_MAX_AGE = 86400  # 24 hours
 
-# CSRF exemption for API endpoints
-CSRF_TRUSTED_ORIGINS = []
+# Force CORS to be applied to all responses
+CORS_REPLACE_HTTPS_REFERER = True
 
-if not DEBUG:
-    # Production CORS settings
-    CORS_ALLOWED_ORIGINS = os.environ.get(
-        'CORS_ALLOWED_ORIGINS', 
-        'https://hotel-platform-web.onrender.com'
-    ).split(',')
-    
-    # Remove any empty strings from the list
-    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in CORS_ALLOWED_ORIGINS if origin.strip()]
-    
-    # Also add origin patterns for more flexibility
-    CORS_ALLOWED_ORIGIN_REGEXES = [
-        r"^https://.*\.onrender\.com$",
-    ]
-    
-    # Production specific settings
-    CORS_ALLOW_ALL_ORIGINS = False  # Ensure this is False in production
-    
-    # CSRF trusted origins for production
-    CSRF_TRUSTED_ORIGINS = [
-        'https://hotel-platform-web.onrender.com',
-        'https://hotel-platform-api.onrender.com',
-    ]
-else:
-    # Development CORS settings
-    CORS_ALLOWED_ORIGINS = [
-        'http://localhost:3000',  # React dev server
-        'http://localhost:5173',  # Vite dev server
-        'http://127.0.0.1:3000',
-        'http://127.0.0.1:5173',
-    ]
-    
-    # Development: Allow all for easier debugging
-    CORS_ALLOW_ALL_ORIGINS = True
-    
-    # CSRF trusted origins for development
-    CSRF_TRUSTED_ORIGINS = [
-        'http://localhost:3000',
-        'http://localhost:5173',
-        'http://127.0.0.1:3000',
-        'http://127.0.0.1:5173',
-    ]
+# Additional debugging
+print(f"🔧 CORS_ALLOW_ALL_ORIGINS: {locals().get('CORS_ALLOW_ALL_ORIGINS', 'Not set')}")
+print(f"🔧 CORS_ALLOWED_ORIGINS: {locals().get('CORS_ALLOWED_ORIGINS', 'Not set')}")
+print(f"🔧 CORS_ALLOW_CREDENTIALS: {locals().get('CORS_ALLOW_CREDENTIALS', 'Not set')}")
 
 CLIENT_ID = 'kycIFibcgbEopjJ9esSVPU5PTECw6z4jAqMZ5j9w'
 CLIENT_SECRET = 'TI8kzKgylZvAmqmSoi0SpgYt4z0pBS3SzNEEEPey0tVpYXRBQJgfrsYQzakk433ONKTc8WF9q3FnZR0XtDI1aOkj5bsIJcL9hZvpHaxJH9vXOUklrGXaiPivlJPOYuN4'

@@ -19,14 +19,7 @@ logger = logging.getLogger(__name__)
 @require_http_methods(["GET", "HEAD", "OPTIONS"])
 def health_check(request):
     """Simple health check endpoint for Render.com deployment"""
-    response = JsonResponse({'status': 'healthy'}, status=200)
-    
-    # Add CORS headers manually if needed
-    response['Access-Control-Allow-Origin'] = '*'
-    response['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
-    response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-    
-    return response
+    return JsonResponse({'status': 'healthy'}, status=200)
 
 # REST Framework imports
 from rest_framework import viewsets, status, generics
