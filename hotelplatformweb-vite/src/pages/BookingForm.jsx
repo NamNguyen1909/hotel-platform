@@ -51,7 +51,6 @@ const BookingForm = () => {
     checkInDate: null,
     checkOutDate: null,
     guestCount: 1,
-    discountCode: '',
     specialRequests: '',
     customer: '',
   });
@@ -64,7 +63,6 @@ const BookingForm = () => {
   const [pricing, setPricing] = useState(null);
   const [pricingLoading, setPricingLoading] = useState(false);
   const [pricingError, setPricingError] = useState(null);
-  const [discountError, setDiscountError] = useState(null);
   const [isRoomAvailable, setIsRoomAvailable] = useState(null);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
@@ -100,11 +98,8 @@ const BookingForm = () => {
     if (roomId) {
       const fetchRoomDetailsAndTypes = async () => {
         try {
-          // Fetch room details
           const roomResponse = await api.get(`/rooms/${roomId}/`);
           setRoomDetails(roomResponse.data);
-
-          // Fetch room types
           const typesResponse = await api.get('room-types/');
           setRoomTypes(Array.isArray(typesResponse.data.results) ? typesResponse.data.results : typesResponse.data);
         } catch {
@@ -134,34 +129,25 @@ const BookingForm = () => {
   }, [userRole]);
 
   const getRoomTypeInfo = (roomTypeId) => {
-    // Handle both numeric and string IDs
     const normalizedId = roomTypeId?.toString();
-    
-    // Handle case where room_type is an object
     let targetId = normalizedId;
     if (roomTypeId && typeof roomTypeId === 'object' && roomTypeId.id) {
       targetId = roomTypeId.id.toString();
     }
-    
-    // Find matching room type
-    const roomType = roomTypes.find((type) => 
-      type.id.toString() === targetId || 
-      type.id === roomTypeId || 
+    const roomType = roomTypes.find((type) =>
+      type.id.toString() === targetId ||
+      type.id === roomTypeId ||
       (type.id === roomTypeId?.id)
     );
-    
-    // Parse base_price properly
     let basePrice = 0;
     if (roomType?.base_price) {
       basePrice = parseFloat(roomType.base_price);
     } else if (roomDetails?.room_type_price) {
       basePrice = parseFloat(roomDetails.room_type_price);
     }
-    
-    return roomType || { 
-      name: roomDetails?.room_type_name || 
-            (roomTypeId?.name || 'N/A'), 
-      base_price: basePrice || 0, 
+    return roomType || {
+      name: roomDetails?.room_type_name || (roomTypeId?.name || 'N/A'),
+      base_price: basePrice || 0,
       max_guests: roomType?.max_guests || roomDetails?.max_guests || 'N/A'
     };
   };
@@ -197,7 +183,6 @@ const BookingForm = () => {
     try {
       setPricingLoading(true);
       setPricingError(null);
-      setDiscountError(null);
       setPricing(null);
       setIsRoomAvailable(null);
 
@@ -224,20 +209,12 @@ const BookingForm = () => {
         check_in_date: format(formData.checkInDate, 'yyyy-MM-dd'),
         check_out_date: format(formData.checkOutDate, 'yyyy-MM-dd'),
         guest_count: parseInt(formData.guestCount),
-        discount_code: formData.discountCode || undefined,
       });
       setPricing(priceResponse.data);
       setPricingError(null);
-      setDiscountError(null);
     } catch (err) {
       const errorMessage = err.response?.data?.error || 'Không thể tính giá. Vui lòng kiểm tra lại thông tin.';
-      if (errorMessage.includes('Mã giảm giá')) {
-        setDiscountError('Mã giảm giá không hợp lệ hoặc đã hết hạn.');
-        setPricingError(null);
-      } else {
-        setPricingError(errorMessage);
-        setDiscountError(null);
-      }
+      setPricingError(errorMessage);
       setPricing(null);
       setIsRoomAvailable(false);
     } finally {
@@ -250,7 +227,6 @@ const BookingForm = () => {
     setErrors({});
     setPricing(null);
     setPricingError(null);
-    setDiscountError(null);
     setIsRoomAvailable(null);
   };
 
@@ -281,7 +257,6 @@ const BookingForm = () => {
         check_in_date: normalizeDate(formData.checkInDate),
         check_out_date: normalizeDate(formData.checkOutDate),
         guest_count: parseInt(formData.guestCount),
-        discount_code: formData.discountCode || undefined,
         special_requests: formData.specialRequests || undefined,
       };
       if (['staff', 'admin', 'owner'].includes(userRole)) {
@@ -488,108 +463,99 @@ const BookingForm = () => {
                 </Box>
               </Grid>
               <Grid item xs={12}>
-                <Box sx={{ p: 2, bgcolor: 'rgba(139, 69, 19, 0.05)', borderRadius: 2 }}>
-                  <Typography variant="h6" sx={{ fontFamily: 'Inter', color: '#8B4513', mb: 2, fontWeight: 600 }}>
-                    Mã Giảm Giá
-                  </Typography>
-                  <Grid container spacing={2} alignItems="center">
-                    <Grid item xs={12} sm={8}>
-                      <TextField
-                        fullWidth
-                        variant="outlined"
-                        placeholder="Nhập mã giảm giá"
-                        value={formData.discountCode}
-                        onChange={(e) => handleInputChange('discountCode', e.target.value)}
-                        error={!!discountError}
-                        helperText={discountError}
-                        sx={{
-                          bgcolor: 'white',
-                          '& .MuiOutlinedInput-notchedOutline': { borderColor: '#DAA520' },
-                          '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#B8860B' },
-                          '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#8B4513' },
-                        }}
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={4}>
-                      <Button
-                        variant="contained"
-                        onClick={handleCalculatePrice}
-                        disabled={pricingLoading || Object.keys(errors).length > 0}
-                        sx={{
-                          bgcolor: '#DAA520',
-                          '&:hover': { bgcolor: '#B8860B' },
-                          fontFamily: 'Inter',
-                          width: '100%',
-                          boxShadow: '0 4px 12px rgba(218, 165, 32, 0.3)',
-                        }}
-                      >
-                        Tính Giá Tạm Tính
-                      </Button>
-                    </Grid>
-                  </Grid>
+                <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 2, mt: 3 }}>
+                  <Box sx={{ p: 2, bgcolor: 'rgba(139, 69, 19, 0.05)', borderRadius: 2, flex: 1 }}>
+                    <Typography variant="h6" sx={{ fontFamily: 'Inter', color: '#8B4513', mb: 2, fontWeight: 600 }}>
+                      Tính Giá Tạm Tính
+                    </Typography>
+                    <Button
+                      variant="contained"
+                      onClick={handleCalculatePrice}
+                      disabled={pricingLoading || Object.keys(errors).length > 0}
+                      sx={{
+                        bgcolor: '#DAA520',
+                        '&:hover': { bgcolor: '#B8860B' },
+                        fontFamily: 'Inter',
+                        width: '100%',
+                        boxShadow: '0 4px 12px rgba(218, 165, 32, 0.3)',
+                      }}
+                    >
+                      Tính Giá Tạm Tính
+                    </Button>
+                  </Box>
+                  {pricingLoading ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: 250, minHeight: 120 }}>
+                      <CircularProgress sx={{ color: '#DAA520' }} />
+                    </Box>
+                  ) : (
+                    <Box
+                      sx={{
+                        p: 2,
+                        bgcolor: 'white',
+                        borderRadius: 2,
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                        width: 250,
+                        minHeight: 120,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Typography variant="h6" sx={{ fontFamily: 'Inter', color: '#8B4513', mb: 1, fontWeight: 600, textAlign: 'center' }}>
+                        Giá Tạm Tính
+                      </Typography>
+                      {pricing ? (
+                        <>
+                          <Typography variant="body1" sx={{ fontFamily: 'Inter', color: 'text.secondary', mb: 0.5 }}>
+                            Số đêm: {numberOfDays}
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontFamily: 'Inter', color: '#DAA520', fontWeight: 600, fontSize: '1.1rem' }}>
+                            Tổng giá: {formatCurrency(pricing.total_price)}
+                          </Typography>
+                        </>
+                      ) : (
+                        <Typography variant="body1" sx={{ fontFamily: 'Inter', color: 'text.secondary', textAlign: 'center' }}>
+                          Chưa tính giá
+                        </Typography>
+                      )}
+                    </Box>
+                  )}
                 </Box>
               </Grid>
-              {pricing && !pricingLoading && !pricingError && !discountError && (
-                <Grid item xs={12}>
-                  <Box sx={{ p: 2, bgcolor: 'white', borderRadius: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
-                    <Typography variant="h6" sx={{ fontFamily: 'Inter', color: '#8B4513', mb: 2, fontWeight: 600, textAlign: 'center' }}>
-                      Giá Tạm Tính
-                    </Typography>
-                    <Typography variant="body1" sx={{ fontFamily: 'Inter', color: 'text.secondary', mb: 1 }}>
-                      Số đêm: {numberOfDays}
-                    </Typography>
-                    <Typography variant="body1" sx={{ fontFamily: 'Inter', color: 'text.secondary', mb: 1 }}>
-                      Giá gốc: {formatCurrency(pricing.original_price)}
-                    </Typography>
-                    {pricing.discount_info && (
-                      <Typography variant="body1" sx={{ fontFamily: 'Inter', color: '#2E8B57', mb: 1 }}>
-                        Giảm giá: {pricing.discount_info.discount_percentage}% (
-                        {formatCurrency(pricing.discount_info.amount_saved)})
-                      </Typography>
-                    )}
-                    <Typography variant="body1" sx={{ fontFamily: 'Inter', color: '#DAA520', fontWeight: 600, mb: 1, fontSize: '1.1rem' }}>
-                      Tổng giá: {formatCurrency(pricing.total_price)}
-                    </Typography>
-                  </Box>
-                </Grid>
-              )}
-              {pricingLoading && (
-                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
-                  <CircularProgress sx={{ color: '#DAA520' }} />
+              <Grid item xs={12}>
+                <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, mt: 3 }}>
+                  <Button
+                    variant="outlined"
+                    onClick={() => navigate('/rooms')}
+                    sx={{
+                      borderColor: '#DAA520',
+                      color: '#DAA520',
+                      fontFamily: 'Inter',
+                      px: 4,
+                      py: 1.5,
+                      borderRadius: 3,
+                      '&:hover': { borderColor: '#B8860B', color: '#B8860B' },
+                    }}
+                  >
+                    Quay Lại
+                  </Button>
+                  <Button
+                    variant="contained"
+                    onClick={handlePreviewBooking}
+                    disabled={loading || Object.keys(errors).length > 0 || !pricing || isRoomAvailable === false || roomTypesLoading}
+                    sx={{
+                      bgcolor: '#DAA520',
+                      '&:hover': { bgcolor: '#B8860B' },
+                      fontFamily: 'Inter',
+                      px: 4,
+                      py: 1.5,
+                      borderRadius: 3,
+                      boxShadow: '0 4px 12px rgba(218, 165, 32, 0.3)',
+                    }}
+                  >
+                    Đặt Phòng
+                  </Button>
                 </Box>
-              )}
-              <Grid item xs={12} sx={{ display: 'flex', justifyContent: 'center', gap: 2, mt: 3 }}>
-                <Button
-                  variant="outlined"
-                  onClick={() => navigate('/rooms')}
-                  sx={{
-                    borderColor: '#DAA520',
-                    color: '#DAA520',
-                    fontFamily: 'Inter',
-                    px: 4,
-                    py: 1.5,
-                    borderRadius: 3,
-                    '&:hover': { borderColor: '#B8860B', color: '#B8860B' },
-                  }}
-                >
-                  Quay Lại
-                </Button>
-                <Button
-                  variant="contained"
-                  onClick={handlePreviewBooking}
-                  disabled={loading || Object.keys(errors).length > 0 || !pricing || isRoomAvailable === false || roomTypesLoading}
-                  sx={{
-                    bgcolor: '#DAA520',
-                    '&:hover': { bgcolor: '#B8860B' },
-                    fontFamily: 'Inter',
-                    px: 4,
-                    py: 1.5,
-                    borderRadius: 3,
-                    boxShadow: '0 4px 12px rgba(218, 165, 32, 0.3)',
-                  }}
-                >
-                  Đặt Phòng
-                </Button>
               </Grid>
             </Grid>
           </Card>
@@ -636,12 +602,6 @@ const BookingForm = () => {
                 <Typography variant="body1" sx={{ mb: 1.5 }}>
                   <strong>Giá gốc:</strong> {pricing ? formatCurrency(pricing.original_price) : 'N/A'}
                 </Typography>
-                {pricing?.discount_info && (
-                  <Typography variant="body1" sx={{ mb: 1.5, color: '#2E8B57' }}>
-                    <strong>Giảm giá:</strong> {pricing.discount_info.discount_percentage}% (
-                    {formatCurrency(pricing.discount_info.amount_saved)})
-                  </Typography>
-                )}
                 <Typography variant="body1" sx={{ mb: 1.5, fontWeight: 600, color: '#DAA520' }}>
                   <strong>Tổng giá:</strong> {pricing ? formatCurrency(pricing.total_price) : 'N/A'}
                 </Typography>

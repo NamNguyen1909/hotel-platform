@@ -14,8 +14,8 @@ import Rooms from './pages/Rooms';
 import MyBookings from './pages/MyBookings';
 import Payments from './pages/Payments';
 import RoomsManagement from './pages/RoomsManagement';
-import StaffsManagement from './pages/StaffsManagement';
 import CustomersManagement from './pages/CustomersManagement';
+import EmployeeManagement from './pages/EmployeeManagement';
 import Bookings from './pages/Bookings';
 import Invoices from './pages/Invoices';
 import Analytics from './pages/Analytics';
@@ -48,7 +48,7 @@ const AppContent = () => {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/rooms-management" element={<RoomsManagement />} />
-          <Route path="/staffs-management" element={<StaffsManagement />} />
+          <Route path="/staffs-management" element={<EmployeeManagement />} />
           <Route path="/customers-management" element={<CustomersManagement />} />
           <Route path="/staff/bookings" element={<Bookings />} />
           <Route path="/analytics" element={<Analytics />} />

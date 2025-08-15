@@ -199,15 +199,6 @@ class CanConfirmBooking(permissions.BasePermission):
                 request.user.role in ['admin', 'owner', 'staff'])
 
 
-class CanGenerateQRCode(permissions.BasePermission):
-    """
-    Quyền tạo QR code: Admin, Owner, Staff
-    """
-    def has_permission(self, request, view):
-        return (request.user and request.user.is_authenticated and 
-                request.user.role in ['admin', 'owner', 'staff'])
-
-
 class IsOwnerOrReadOnly(permissions.BasePermission):
     """
     Quyền đọc cho tất cả, chỉ owner mới có thể chỉnh sửa
@@ -345,7 +336,6 @@ ROLE_PERMISSIONS = {
         'can_check_in',
         'can_check_out',
         'can_confirm_booking',
-        'can_generate_qr_code',
         'can_create_notification',
         'can_modify_room_type',
         'can_access_all_bookings',
@@ -361,7 +351,6 @@ ROLE_PERMISSIONS = {
         'can_check_in',
         'can_check_out',
         'can_confirm_booking',
-        'can_generate_qr_code',
         'can_create_notification',
         'can_modify_room_type',
         'can_access_all_bookings',
@@ -375,7 +364,6 @@ ROLE_PERMISSIONS = {
         'can_check_in',
         'can_check_out',
         'can_confirm_booking',
-        'can_generate_qr_code',
         'can_access_all_bookings',
         'can_access_all_rentals',
         'can_access_all_payments',

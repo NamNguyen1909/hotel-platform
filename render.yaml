@@ -8,14 +8,14 @@ services:
   # Django Backend API
   - type: web
     name: hotel-platform-api
-    runtime: python
+    env: python
     rootDir: hotelplatformapi
     buildCommand: |
       pip install -r requirements.txt
       python manage.py collectstatic --noinput
       python manage.py migrate
-      python manage.py seed
-    startCommand: gunicorn --workers 2 --bind 0.0.0.0:$PORT hotelplatformapi.wsgi:application
+      # python manage.py seed
+    startCommand: gunicorn --workers 2 --bind 0.0.0.0:$PORT --timeout 30 --keep-alive 2 --max-requests 1000 --max-requests-jitter 50 hotelplatformapi.wsgi:application
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -28,9 +28,15 @@ services:
       - key: DEBUG
         value: "False"
       - key: ALLOWED_HOSTS
-        value: "hotel-platform-api.onrender.com,hotel-platform-web.onrender.com,localhost,127.0.0.1"
+        value: "hotel-platform-api.onrender.com,hotel-platform-web.onrender.com,localhost,127.0.0.1,*.onrender.com,hotel-platform-api-sduw.onrender.com"
       - key: CORS_ALLOWED_ORIGINS
         value: "https://hotel-platform-web.onrender.com"
+      - key: FRONTEND_URL
+        value: "https://hotel-platform-web.onrender.com"
+      - key: BACKEND_URL
+        value: "https://hotel-platform-api-sduw.onrender.com"
+      - key: CRON_API_KEY
+        value: "hotel-platform-cron-2025-secure"
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
       - key: CLOUDINARY_API_KEY
@@ -38,27 +44,24 @@ services:
       - key: CLOUDINARY_API_SECRET
         sync: false
       - key: PYTHON_VERSION
-        value: "3.11"
+        value: "3.11.10"
     plan: free
-    healthCheckPath: /
+    healthCheckPath: /health/
     autoDeploy: true
 
-  # React Frontend
+  # React Frontend - Node.js Web Service
   - type: web
     name: hotel-platform-web
-    runtime: node
+    env: node
     rootDir: hotelplatformweb-vite
-    buildCommand: |
-      npm ci
-      npm run build
-    startCommand: npm run preview -- --port $PORT --host 0.0.0.0
+    buildCommand: npm install && npm run build
+    startCommand: npx serve dist -s -p $PORT
+    plan: free
     envVars:
-      - key: VITE_API_BASE_URL
-        value: "https://hotel-platform-api.onrender.com"
       - key: NODE_ENV
         value: production
+      - key: VITE_API_BASE_URL
+        value: https://hotel-platform-api-sduw.onrender.com
       - key: NODE_VERSION
-        value: "18"
-    plan: free
-    healthCheckPath: /
+        value: "20"
     autoDeploy: true

@@ -3,9 +3,6 @@
   "version": "1.0.0",
   "description": "Hotel Management Platform with Django Backend and React Frontend",
   "private": true,
-  "workspaces": [
-    "hotelplatformweb-vite"
-  ],
   "scripts": {
     "dev:backend": "cd hotelplatformapi && python manage.py runserver",
     "dev:frontend": "cd hotelplatformweb-vite && npm run dev",

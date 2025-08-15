@@ -21,6 +21,7 @@ import {
   CardContent,
   Divider,
   Grid,
+  Backdrop,
 } from '@mui/material';
 import { DataGrid } from '@mui/x-data-grid';
 import {
@@ -90,6 +91,7 @@ const Bookings = () => {
     open: false,
     bookingId: null,
   });
+  const [vnpayRedirectProcessing, setVnpayRedirectProcessing] = useState(false);
 
   // Check payment result từ URL params (VNPay redirect)
   useEffect(() => {
@@ -98,26 +100,83 @@ const Bookings = () => {
     const message = searchParams.get('message');
     const autoRefresh = searchParams.get('auto_refresh');
     
-    if (paymentResult || autoRefresh) {
-      // Nếu có auto_refresh, refresh token để duy trì session
-      if (autoRefresh === 'true' && authUtils.isAuthenticated()) {
-        authUtils.refreshToken().catch(error => {
-          console.warn('Failed to refresh token after payment:', error);
-          // Không navigate về login ngay, để user thấy kết quả thanh toán trước
-        });
-      }
-      
-      // Clear URL params ngay lập tức để tránh loop
-      const newUrl = location.pathname;
-      window.history.replaceState({}, '', newUrl);
-      
-      // Force refresh data sau khi clear URL
+    const handlePaymentRedirect = async () => {
       if (paymentResult || autoRefresh) {
-        // Trigger a fresh data fetch
-        setPaginationModel(prev => ({ ...prev, page: prev.page }));
+        setVnpayRedirectProcessing(true);
+        try {
+          // Đầu tiên, kiểm tra và refresh token nếu cần
+          if (autoRefresh === 'true') {
+            if (authUtils.isAuthenticated()) {
+              try {
+                await authUtils.refreshToken();
+                console.log('Token refreshed successfully after VNPay redirect');
+              } catch (refreshError) {
+                console.warn('Failed to refresh token after payment:', refreshError);
+                // Nếu refresh fail, redirect về login
+                authUtils.clearTokens();
+                navigate('/login', { 
+                  state: { 
+                    message: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+                    redirectAfterLogin: location.pathname + location.search 
+                  }
+                });
+                return;
+              }
+            } else {
+              // Không có token, redirect về login
+              navigate('/login', { 
+                state: { 
+                  message: 'Vui lòng đăng nhập để xem kết quả thanh toán.',
+                  redirectAfterLogin: '/staff/bookings'
+                }
+              });
+              return;
+            }
+          }
+          
+          // Delay nhỏ để đảm bảo token đã được set
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Hiển thị thông báo kết quả thanh toán
+          if (paymentResult === 'success') {
+            setSnackbar({
+              open: true,
+              message: message || 'Thanh toán thành công!',
+              severity: 'success'
+            });
+          } else if (paymentResult === 'failed') {
+            setSnackbar({
+              open: true,
+              message: message || 'Thanh toán thất bại! Vui lòng thử lại.',
+              severity: 'error'
+            });
+          }
+          
+          // Clear URL params ngay lập tức để tránh loop
+          const newUrl = location.pathname;
+          window.history.replaceState({}, '', newUrl);
+          
+          // Force refresh data sau khi clear URL
+          if (paymentResult || autoRefresh) {
+            // Trigger a fresh data fetch
+            setPaginationModel(prev => ({ ...prev, page: prev.page }));
+          }
+          
+        } catch (error) {
+          console.error('Error handling payment redirect:', error);
+          setSnackbar({
+            open: true,
+            message: 'Có lỗi xảy ra khi xử lý kết quả thanh toán.',
+            severity: 'error'
+          });
+        } finally {
+          setVnpayRedirectProcessing(false);
+        }
       }
-    }
-  }, [location]);
+    };
+
+    handlePaymentRedirect();
+  }, [location, navigate]);
 
   // Fetch bookings từ API
   useEffect(() => {
@@ -194,7 +253,20 @@ const Bookings = () => {
         setRowCount(response.data.count || 0);
       } catch (err) {
         console.error('Error fetching bookings:', err);
-        if (err.response?.status === 401) {
+        
+        // Xử lý lỗi authentication đặc biệt từ interceptor
+        if (err.message === 'AUTHENTICATION_REQUIRED') {
+          setError('Phiên đăng nhập hết hạn. Đang chuyển hướng...');
+          authUtils.clearTokens();
+          setTimeout(() => {
+            navigate('/login', { 
+              state: { 
+                message: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+                redirectAfterLogin: location.pathname 
+              }
+            });
+          }, 1500);
+        } else if (err.response?.status === 401) {
           setError('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
           authUtils.clearTokens();
           navigate('/login');
@@ -654,6 +726,27 @@ const Bookings = () => {
 
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
+      {/* Loading overlay khi đang xử lý VNPay redirect */}
+      {vnpayRedirectProcessing && (
+        <Backdrop 
+          open={true} 
+          sx={{ 
+            color: '#fff', 
+            zIndex: (theme) => theme.zIndex.drawer + 1,
+            flexDirection: 'column',
+            gap: 2
+          }}
+        >
+          <CircularProgress color="inherit" size={60} />
+          <Typography variant="h6">
+            Đang xử lý kết quả thanh toán...
+          </Typography>
+          <Typography variant="body2" sx={{ opacity: 0.8 }}>
+            Vui lòng đợi trong giây lát
+          </Typography>
+        </Backdrop>
+      )}
+      
       <Typography variant="h4" gutterBottom>
         Quản lý đặt phòng
       </Typography>

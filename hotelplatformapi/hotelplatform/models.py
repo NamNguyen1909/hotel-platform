@@ -629,6 +629,7 @@ class Notification(models.Model):
         ('booking_confirmation', 'Xác nhận đặt phòng'),
         ('check_in_reminder', 'Nhắc nhở nhận phòng'),
         ('check_out_reminder', 'Nhắc nhở trả phòng'),
+        ('payment_failed', 'Thanh toán thất bại'),
         ('promotion', 'Khuyến mãi'),
     )
 

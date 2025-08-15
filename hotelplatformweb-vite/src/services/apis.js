@@ -1,6 +1,10 @@
 // Cấu hình Axios
 import axios from 'axios';
 
+// Debug: Log API base URL
+console.log('🔗 API Base URL:', import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/');
+console.log('🌍 Environment:', import.meta.env.NODE_ENV);
+
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/', // Base URL của Django API
   headers: {
@@ -36,27 +40,37 @@ api.interceptors.response.use(
       const refreshToken = localStorage.getItem('refresh_token');
       if (refreshToken) {
         try {
-          const response = await axios.post(`http://127.0.0.1:8000/api/auth/token/refresh/`, {
+          console.log('Attempting to refresh token...');
+          const response = await axios.post(`${import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'}/api/auth/token/refresh/`, {
             refresh: refreshToken
           });
           
           const { access } = response.data;
           localStorage.setItem('access_token', access);
+          api.defaults.headers.common['Authorization'] = `Bearer ${access}`;
+          
+          console.log('Token refreshed successfully');
           
           // Retry original request with new token
           originalRequest.headers.Authorization = `Bearer ${access}`;
           return api(originalRequest);
         } catch (refreshError) {
-          // Refresh failed, clear tokens but don't auto-redirect
+          console.error('Token refresh failed:', refreshError);
+          // Refresh failed, clear tokens but don't auto-redirect in API layer
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
-          // Let the component handle the error and decide what to do
-          return Promise.reject(refreshError);
+          delete api.defaults.headers.common['Authorization'];
+          
+          // Let the component handle the authentication error
+          return Promise.reject(new Error('AUTHENTICATION_REQUIRED'));
         }
       } else {
-        // No refresh token, but don't auto-redirect
-        // Some endpoints are public and 401 is expected for non-authenticated users
-        return Promise.reject(error);
+        console.warn('No refresh token available');
+        // No refresh token available
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        delete api.defaults.headers.common['Authorization'];
+        return Promise.reject(new Error('AUTHENTICATION_REQUIRED'));
       }
     }
     
@@ -204,12 +218,6 @@ export const endpoints = {
     markRead: (id) => `/notifications/${id}/mark_as_read/`,
     markAllRead: '/notifications/mark_all_as_read/',
     unread: '/notifications/unread/',
-  },
-  
-  // QR Code endpoints
-  qr: {
-    generate: '/api/qr-generate/',
-    scan: '/api/qr-scan/',
   },
   
   // Statistics endpoints

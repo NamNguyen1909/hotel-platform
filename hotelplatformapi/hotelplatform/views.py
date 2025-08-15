@@ -2,15 +2,24 @@ from datetime import datetime, timedelta
 import hashlib
 import hmac
 import pytz
+import os
 from django.shortcuts import redirect, render
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 import urllib
 import logging
 from decimal import Decimal, ROUND_HALF_UP
 
 # Thiết lập logger
 logger = logging.getLogger(__name__)
+
+# Health check endpoint for Render deployment
+@csrf_exempt
+@require_http_methods(["GET", "HEAD", "OPTIONS"])
+def health_check(request):
+    """Simple health check endpoint for Render.com deployment"""
+    return JsonResponse({'status': 'healthy'}, status=200)
 
 # REST Framework imports
 from rest_framework import viewsets, status, generics
@@ -38,13 +47,13 @@ from .models import (
 from .serializers import (
     UserSerializer, UserDetailSerializer, UserListSerializer, RoomTypeSerializer, RoomSerializer, RoomDetailSerializer,
     BookingSerializer, BookingDetailSerializer, RoomRentalSerializer, RoomRentalDetailSerializer,
-    PaymentSerializer, DiscountCodeSerializer, NotificationSerializer, RoomImageSerializer
+    PaymentSerializer, DiscountCodeSerializer, NotificationSerializer, RoomImageSerializer, InvoiceSerializer
 )
 from .permissions import (
     IsAdminUser, IsOwnerUser, IsStaffUser, IsCustomerUser, IsAdminOrOwner, IsAdminOrOwnerOrStaff,
     IsBookingOwner, IsRoomRentalOwner, IsPaymentOwner, IsNotificationOwner, CanManageRooms,
     CanManageBookings, CanManagePayments, CanCreateDiscountCode, CanViewStats, CanCheckIn,
-    CanCheckOut, CanConfirmBooking, CanGenerateQRCode, CanUpdateProfile, CanCancelUpdateBooking,
+    CanCheckOut, CanConfirmBooking, CanUpdateProfile, CanCancelUpdateBooking,
     CanCreateNotification, CanModifyRoomType, CanManageCustomers, CanManageStaff, CanAccessAllBookings,
     CanCreateBooking
 )
@@ -1662,106 +1671,6 @@ class NotificationViewSet(viewsets.ViewSet, generics.ListAPIView, generics.Retri
         unread_count = Notification.objects.filter(user=request.user, is_read=False).count()
         return Response({"unread_count": unread_count})
 
-# ================================ QR CODE & CHECK-IN ================================
-
-class QRCodePaymentView(APIView):
-    """
-    API để quét QR code và xử lý thanh toán hóa đơn
-    """
-    permission_classes = [IsCustomerUser]
-
-    def post(self, request):
-        """
-        Quét QR code để thanh toán:
-        1. Lấy uuid từ QR code
-        2. Tìm booking và RoomRental liên kết
-        3. Tạo Payment và xử lý thanh toán
-        """
-        uuid_str = request.data.get('uuid')
-        payment_method = request.data.get('payment_method', 'vnpay')
-
-        if not uuid_str:
-            return Response({"error": "Cần cung cấp UUID từ QR code"}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            booking = Booking.objects.get(uuid=uuid_str)
-            rental = RoomRental.objects.filter(booking=booking).first()
-            if not rental:
-                return Response({"error": "Không tìm thấy phiếu thuê phòng liên kết"}, status=status.HTTP_400_BAD_REQUEST)
-
-            payment = rental.payments.filter(status=False).first()
-            if payment:
-                return Response({"error": "Hóa đơn đang chờ thanh toán"}, status=status.HTTP_400_BAD_REQUEST)
-
-            with transaction.atomic():
-                payment = Payment.objects.create(
-                    rental=rental,
-                    customer=rental.customer,
-                    amount=rental.total_price,
-                    payment_method=payment_method,
-                    status=False,
-                    transaction_id=f"TRANS-{timezone.now().strftime('%Y%m%d%H%M%S')}"
-                )
-
-                if payment_method.lower() == 'vnpay':
-                    request.GET = request.GET.copy()
-                    request.GET['amount'] = str(rental.total_price)
-                    payment_response = create_payment_url(request)
-                    payment_url = payment_response.json['payment_url']
-                    return Response({
-                        "message": "Yêu cầu thanh toán được tạo",
-                        "payment": PaymentSerializer(payment).data,
-                        "payment_url": payment_url
-                    })
-
-                payment.status = True
-                payment.paid_at = timezone.now()
-                payment.save()
-
-                return Response({
-                    "message": "Thanh toán thành công",
-                    "payment": PaymentSerializer(payment).data
-                })
-
-        except Booking.DoesNotExist:
-            return Response({"error": "Không tìm thấy booking với UUID này"}, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-class QRCodeGenerateView(APIView):
-    """
-    API để tạo QR code cho booking (chỉ admin/staff)
-    """
-    permission_classes = [CanGenerateQRCode]
-
-    def post(self, request):
-        """
-        Tạo QR code cho booking
-        """
-        booking_id = request.data.get('booking_id')
-        if not booking_id:
-            return Response({"error": "Cần cung cấp booking_id"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            booking = Booking.objects.get(id=booking_id)
-            
-            if booking.status != BookingStatus.CONFIRMED:
-                return Response({"error": "Booking chưa được xác nhận"}, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Generate QR code (sẽ được xử lý bởi method trong model)
-            qr_code_url = booking.generate_qr_code()
-            
-            return Response({
-                "message": "QR code đã được tạo",
-                "qr_code_url": qr_code_url,
-                "booking": BookingDetailSerializer(booking).data
-            })
-        
-        except Booking.DoesNotExist:
-            return Response({"error": "Không tìm thấy booking"}, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 # ================================ STATS & ANALYTICS ================================
 
 class StatsView(APIView):
@@ -1981,10 +1890,12 @@ def create_payment_url(request):
     import pytz
     tz = pytz.timezone("Asia/Ho_Chi_Minh")
 
-    vnp_TmnCode = 'GUPETCYO'
-    vnp_HashSecret = 'E2G0Y153XRTW37LVRKW8DJ1TGEQ9RK6I'
+    vnp_TmnCode = os.environ.get('VNPAY_TMN_CODE')
+    vnp_HashSecret = os.environ.get('VNPAY_HASH_SECRET')
     vnp_Url = 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html'
-    vnp_ReturnUrl = 'http://127.0.0.1:8000/vnpay/redirect/'
+    # Sử dụng environment variable cho backend URL
+    backend_base_url = os.environ.get('BACKEND_URL', 'http://127.0.0.1:8000')
+    vnp_ReturnUrl = f'{backend_base_url}/vnpay/redirect/'
 
     #Nhận các thông tin đơn hàng từ request
     amount = request.GET.get("amount", "10000")  # đơn vị VND
@@ -2125,12 +2036,35 @@ def vnpay_redirect(request):
         else:
             payment.status = False
             payment.save()
+            
+            # Tạo notification cho user về thanh toán thất bại
+            try:
+                rental = payment.rental
+                booking = rental.booking
+                Notification.objects.create(
+                    user=booking.customer,
+                    notification_type='payment_failed',
+                    title='Thanh toán VNPay thất bại',
+                    message=f'Thanh toán VNPay thất bại cho phòng {", ".join([room.room_number for room in booking.rooms.all()])}. Lý do: {message}. Vui lòng thử lại hoặc chọn thanh toán bằng tiền mặt.'
+                )
+                logger.info(f"Created VNPay failure notification for booking {booking.id}")
+            except Exception as notification_error:
+                logger.error(f"Failed to create VNPay failure notification: {notification_error}")
+            
             logger.warning(f"VNPay payment failed for transaction {vnp_TxnRef}: {message}")
     except Payment.DoesNotExist:
         logger.error(f"Payment not found for transaction {vnp_TxnRef}")
 
     # Tạo frontend redirect URL với thông tin booking để không mất context
-    frontend_url = f"http://localhost:5173/staff/bookings?payment_result={'success' if payment_success else 'failed'}&message={urllib.parse.quote(message)}&auto_refresh=true"
+    # Sử dụng environment variable cho frontend URL
+    frontend_base_url = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+    
+    if payment_success:
+        # Khi thành công: về trang bookings với thông báo thành công
+        frontend_url = f"{frontend_base_url}/staff/bookings?payment_result=success&message={urllib.parse.quote(message)}&auto_refresh=true"
+    else:
+        # Khi thất bại: về trang bookings của staff với thông báo thất bại
+        frontend_url = f"{frontend_base_url}/staff/bookings?payment_result=failed&message={urllib.parse.quote(message)}&auto_refresh=true"
     
     # Always redirect to frontend
     return HttpResponse(f"""
@@ -2397,11 +2331,26 @@ class RoomStatusUpdateTaskView(APIView):
     - Xử lý no-show bookings và giải phóng phòng
     """
     permission_classes = [AllowAny]  #  Allow external systems to call this endpoint
+    
+    @csrf_exempt
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
 
     def post(self, request):
         """
          MAIN AUTOMATION LOGIC - Process room status updates based on booking timeline
         """
+        # Optional: Kiểm tra API key cho security
+        api_key = request.headers.get('X-API-Key') or request.data.get('api_key')
+        expected_key = os.environ.get('CRON_API_KEY', 'hotel-platform-cron-2025')
+        
+        if api_key != expected_key:
+            logger.warning(f"Unauthorized cron job attempt with key: {api_key}")
+            return Response({
+                'error': 'Unauthorized',
+                'message': 'Invalid API key'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
         from django.utils import timezone
         
         logger.info("=== Starting room status update task ===")
@@ -2527,9 +2476,55 @@ class RoomStatusUpdateTaskView(APIView):
             logger.error(f"Room status update task failed: {str(e)}")
             return Response(error_result, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+class TaskStatusView(APIView):
+    """
+    Endpoint để kiểm tra trạng thái tasks và thống kê hệ thống
+    """
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        """Get system status and upcoming tasks"""
+        from django.utils import timezone
+        
+        now = timezone.now()
+        today = now.date()
+        
+        # Thống kê bookings sắp tới
+        upcoming_checkins = Booking.objects.filter(
+            status__in=[BookingStatus.PENDING, BookingStatus.CONFIRMED],
+            check_in_date__date=today
+        ).count()
+        
+        overdue_checkins = Booking.objects.filter(
+            status__in=[BookingStatus.PENDING, BookingStatus.CONFIRMED],
+            check_in_date__lt=now - timedelta(hours=6)
+        ).count()
+        
+        # Thống kê phòng
+        room_stats = {
+            'available': Room.objects.filter(status='available').count(),
+            'booked': Room.objects.filter(status='booked').count(),
+            'occupied': Room.objects.filter(status='occupied').count(),
+            'maintenance': Room.objects.filter(status='maintenance').count(),
+        }
+        
+        return Response({
+            'system_status': 'healthy',
+            'timestamp': now.isoformat(),
+            'upcoming_tasks': {
+                'checkins_today': upcoming_checkins,
+                'overdue_checkins': overdue_checkins,
+                'next_run_needed': upcoming_checkins > 0 or overdue_checkins > 0
+            },
+            'room_status': room_stats,
+            'last_check': now.isoformat()
+        })
+
+
 class InvoiceViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
     queryset = Payment.objects.all()
-    serializer_class = PaymentSerializer
+    serializer_class = InvoiceSerializer 
     permission_classes = [IsAuthenticated, IsPaymentOwner | CanManagePayments]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['customer__full_name', 'status']
@@ -2540,4 +2535,4 @@ class InvoiceViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
         user = self.request.user
         if user.role in ['admin', 'owner', 'staff']:
             return Payment.objects.all()
-        return Payment.objects.filter(customer=user)
+        return Payment.objects.filter(rental__customer=user)

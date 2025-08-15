@@ -19,10 +19,6 @@ router.register(r'invoices', views.InvoiceViewSet, basename='invoice')
 urlpatterns = [
     path('', include(router.urls)),
     
-    # QR Code endpoints
-    path('api/qr-payment/', views.QRCodePaymentView.as_view(), name='qr-payment'),
-    path('api/qr-generate/', views.QRCodeGenerateView.as_view(), name='qr-generate'),
-    
     # Manual RoomRental endpoint
     path('api/rentals/create-manual/', views.RoomRentalViewSet.as_view({'post': 'create_manual_rental'}), name='create-manual-rental'),
     
@@ -34,6 +30,7 @@ urlpatterns = [
     
     # Room status update task endpoint
     path('api/tasks/update-room-status/', views.RoomStatusUpdateTaskView.as_view(), name='update-room-status-task'),
+    path('api/tasks/status/', views.TaskStatusView.as_view(), name='task-status'),
     
     # VNPay endpoints
     path('vnpay/create-payment/', views.create_payment_url, name='create_payment_url'),

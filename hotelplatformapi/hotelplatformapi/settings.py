@@ -23,7 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-q+k0%wy3_kxy&)egzf^lmf$hzn0u*zzx--55&5u8f=)^lf2yas')
+SECRET_KEY = os.environ.get('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
@@ -211,7 +211,7 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',  # JWT (primary)
         'oauth2_provider.contrib.rest_framework.OAuth2Authentication',  # OAuth2 (for future use)
-        'rest_framework.authentication.SessionAuthentication',  # Session (for admin)
+        # Session auth removed to avoid CSRF conflicts with CORS
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',  # Mặc định cho phép tất cả
@@ -222,23 +222,75 @@ REST_FRAMEWORK = {
     ],
 }
 
-# CORS Configuration for production and development
-CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in development
+# CORS Configuration - Simplified and robust
+print(f"🔧 Django DEBUG mode: {DEBUG}")
 
-if not DEBUG:
-    # Production CORS settings
-    CORS_ALLOWED_ORIGINS = os.environ.get(
-        'CORS_ALLOWED_ORIGINS', 
-        'https://hotel-platform-web.onrender.com'
-    ).split(',')
-else:
-    # Development CORS settings
-    CORS_ALLOWED_ORIGINS = [
-        'http://localhost:3000',  # React dev server
-        'http://localhost:5173',  # Vite dev server
+if DEBUG:
+    # Development: Allow all origins for easier development
+    CORS_ALLOW_ALL_ORIGINS = True
+    CORS_ALLOW_CREDENTIALS = True
+    print("🔧 CORS: Development mode - allowing all origins")
+    
+    # CSRF trusted origins for development
+    CSRF_TRUSTED_ORIGINS = [
+        'http://localhost:3000',
+        'http://localhost:5173',
         'http://127.0.0.1:3000',
         'http://127.0.0.1:5173',
     ]
+else:
+    # Production: Temporarily allow all origins for debugging CORS issues
+    CORS_ALLOW_ALL_ORIGINS = True  # Temporarily enabled for debugging
+    CORS_ALLOW_CREDENTIALS = False  # Keep credentials disabled for security
+    
+    # Production CORS settings (backup)
+    cors_origins = os.environ.get('CORS_ALLOWED_ORIGINS', 'https://hotel-platform-web.onrender.com')
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins.split(',') if origin.strip()]
+    print(f"🔧 CORS: Production mode - TEMPORARILY allowing ALL origins for debugging")
+    print(f"🔧 CORS: Configured origins (when restricted): {CORS_ALLOWED_ORIGINS}")
+    
+    # Also add origin patterns for more flexibility
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r"^https://.*\.onrender\.com$",
+    ]
+    
+    # CSRF trusted origins for production
+    CSRF_TRUSTED_ORIGINS = [
+        'https://hotel-platform-web.onrender.com',
+        'https://hotel-platform-api-sduw.onrender.com',
+    ] + CORS_ALLOWED_ORIGINS
+
+# CORS Headers Configuration - Allow common headers
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    'x-api-key',
+]
+
+# CORS Methods Configuration - Allow all standard methods
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+# Additional CORS settings for better compatibility
+CORS_PREFLIGHT_MAX_AGE = 86400  # 24 hours
+
+# Additional debugging
+print(f"🔧 CORS_ALLOW_ALL_ORIGINS: {locals().get('CORS_ALLOW_ALL_ORIGINS', 'Not set')}")
+print(f"🔧 CORS_ALLOWED_ORIGINS: {locals().get('CORS_ALLOWED_ORIGINS', 'Not set')}")
+print(f"🔧 CORS_ALLOW_CREDENTIALS: {locals().get('CORS_ALLOW_CREDENTIALS', 'Not set')}")
 
 CLIENT_ID = 'kycIFibcgbEopjJ9esSVPU5PTECw6z4jAqMZ5j9w'
 CLIENT_SECRET = 'TI8kzKgylZvAmqmSoi0SpgYt4z0pBS3SzNEEEPey0tVpYXRBQJgfrsYQzakk433ONKTc8WF9q3FnZR0XtDI1aOkj5bsIJcL9hZvpHaxJH9vXOUklrGXaiPivlJPOYuN4'

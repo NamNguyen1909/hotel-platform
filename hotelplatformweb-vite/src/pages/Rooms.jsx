@@ -28,12 +28,11 @@ import {
   Slider,
 } from '@mui/material';
 import { Search as SearchIcon, Close as CloseIcon } from '@mui/icons-material';
-import { Carousel } from 'react-responsive-carousel';
-import 'react-responsive-carousel/lib/styles/carousel.min.css';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/apis';
 import authUtils from '../services/auth';
 import { useRoomsPolling } from '../hooks/useSmartPolling';
+import LazyImage from '../components/LazyImage';
 
 const Rooms = () => {
   const [rooms, setRooms] = useState([]);
@@ -48,7 +47,6 @@ const Rooms = () => {
   const [pageSize] = useState(12);
   const [searchQuery, setSearchQuery] = useState('');
   const [roomTypeFilter, setRoomTypeFilter] = useState('');
-  const [guestCountFilter, setGuestCountFilter] = useState('');
   const [priceRange, setPriceRange] = useState([0, 5000000]);
   const [loginDialogOpen, setLoginDialogOpen] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState(null);
@@ -58,7 +56,6 @@ const Rooms = () => {
     const searchParams = new URLSearchParams(location.search);
     setSearchQuery(searchParams.get('search') || '');
     setRoomTypeFilter(searchParams.get('room_type') || '');
-    setGuestCountFilter(searchParams.get('guest_count') || '');
     setPriceRange([
       parseInt(searchParams.get('price_min')) || 0,
       parseInt(searchParams.get('price_max')) || 5000000,
@@ -88,7 +85,6 @@ const Rooms = () => {
         params.append('page_size', pageSize.toString());
         if (searchQuery) params.append('search', searchQuery);
         if (roomTypeFilter) params.append('room_type', roomTypeFilter);
-        if (guestCountFilter) params.append('guest_count', guestCountFilter);
         params.append('price_min', priceRange[0].toString());
         params.append('price_max', priceRange[1].toString());
         const response = await api.get(`rooms/?${params.toString()}`);
@@ -99,18 +95,20 @@ const Rooms = () => {
         setError(null);
 
         const imagePromises = roomsData.map((room) =>
-          api.get(`/room-images/by_room/${room.id}/`).catch(() => ({ data: [] }))
+          api.get(`/room-images/by_room/${room.id}/`).catch(() => ({ data: { images: [] } }))
         );
         const imageResponses = await Promise.all(imagePromises);
         const newRoomImages = {};
         roomsData.forEach((room, index) => {
-          const images = imageResponses[index].data || [];
-          newRoomImages[room.id] = images.length
-            ? images.map((img) => ({
-                url: img.image_url,
-                caption: img.caption || `Phòng ${room.room_number}`,
-              }))
-            : [{ url: '/images/default-room.jpg', caption: 'Ảnh mặc định' }];
+          const images = imageResponses[index].data.images || [];
+          const primaryImage = images.find(img => img.is_primary) || images[0] || {
+            image_url: '/images/default-room.jpg',
+            caption: 'Ảnh mặc định',
+          };
+          newRoomImages[room.id] = {
+            url: primaryImage.image_url,
+            caption: primaryImage.caption || `Phòng ${room.room_number}`,
+          };
         });
         setRoomImages(newRoomImages);
       } catch (err) {
@@ -122,7 +120,7 @@ const Rooms = () => {
       }
     };
     fetchRooms();
-  }, [searchQuery, roomTypeFilter, guestCountFilter, priceRange, currentPage, pageSize]);
+  }, [searchQuery, roomTypeFilter, priceRange, currentPage, pageSize]);
 
   const refreshRoomStatus = async () => {
     if (!loading) {
@@ -131,7 +129,6 @@ const Rooms = () => {
           params: {
             search: searchQuery,
             room_type: roomTypeFilter,
-            max_guests: guestCountFilter,
             price_min: priceRange[0],
             price_max: priceRange[1],
             page: currentPage,
@@ -143,7 +140,7 @@ const Rooms = () => {
         setRooms(roomsData);
         setTotalCount(response.data.count || 0);
         setTotalPages(Math.ceil((response.data.count || 0) / pageSize));
-        
+
         console.log('🏨 Room status auto-refreshed');
       } catch (error) {
         console.error('Room status auto-refresh error:', error);
@@ -157,7 +154,6 @@ const Rooms = () => {
     const params = new URLSearchParams();
     if (searchQuery) params.append('search', searchQuery);
     if (roomTypeFilter) params.append('room_type', roomTypeFilter);
-    if (guestCountFilter) params.append('guest_count', guestCountFilter);
     params.append('price_min', priceRange[0].toString());
     params.append('price_max', priceRange[1].toString());
     params.append('page', '1');
@@ -167,7 +163,6 @@ const Rooms = () => {
   const handleResetFilter = () => {
     setSearchQuery('');
     setRoomTypeFilter('');
-    setGuestCountFilter('');
     setPriceRange([0, 5000000]);
     navigate('/rooms');
   };
@@ -209,82 +204,91 @@ const Rooms = () => {
   return (
     <Box sx={{ bgcolor: 'background.default', minHeight: '100vh', py: 6 }}>
       <Container maxWidth="lg">
-        <Typography variant="h3" sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 700, mb: 4, textAlign: 'center' }}>
-          Khám Phá Phòng Của Sự Sang Trọng
-        </Typography>
-        <Card sx={{ p: 3, mb: 6, borderRadius: 4, boxShadow: '0 8px 24px rgba(139, 69, 19, 0.2)', bgcolor: '#FFF8DC' }}>
-          <Grid container spacing={3}>
-            <Grid item xs={12} sm={6} lg={3}>
+        <Box sx={{ mb: 4, bgcolor: '#FFF8DC', p: 3, borderRadius: 3, boxShadow: '0 4px 12px rgba(139, 69, 19, 0.1)' }}>
+          <Typography variant="h6" sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 600, mb: 2 }}>
+            Tìm kiếm phòng
+          </Typography>
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6} md={4}>
               <TextField
                 fullWidth
-                variant="outlined"
-                placeholder="Tìm kiếm phòng..."
+                label="Tìm kiếm"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleFilter()}
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
-                      <SearchIcon sx={{ color: '#DAA520' }} />
+                      <SearchIcon sx={{ color: '#8B4513' }} />
                     </InputAdornment>
                   ),
-                  sx: { fontFamily: 'Inter', borderRadius: 3 },
                 }}
-                sx={{ bgcolor: 'white', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#DAA520' } }}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 2,
+                    fontFamily: 'Inter',
+                  },
+                  '& .MuiInputLabel-root': { fontFamily: 'Inter', color: '#8B4513' },
+                }}
               />
             </Grid>
-            <Grid item xs={12} sm={6} lg={3}>
-              <FormControl fullWidth sx={{ bgcolor: 'white', borderRadius: 3 }}>
-                <InputLabel sx={{ fontFamily: 'Inter' }}>Loại phòng</InputLabel>
+            <Grid item xs={12} sm={6} md={4}>
+              <FormControl fullWidth sx={{ borderRadius: 2 }} variant="outlined">
+                <InputLabel id="room-type-label" shrink sx={{ fontFamily: 'Inter', color: '#8B4513' }}>
+                  Loại phòng
+                </InputLabel>
                 <Select
+                  labelId="room-type-label"
+                  label="Loại phòng"
                   value={roomTypeFilter}
                   onChange={(e) => setRoomTypeFilter(e.target.value)}
-                  label="Loại phòng"
-                  sx={{ fontFamily: 'Inter' }}
+                  sx={{ fontFamily: 'Inter', borderRadius: 2 }}
+                  displayEmpty
                 >
-                  <MenuItem value="">Tất cả</MenuItem>
+                  <MenuItem value="">
+                    <em>Tất cả</em>
+                  </MenuItem>
                   {roomTypes.map((type) => (
-                    <MenuItem key={type.id} value={type.id} sx={{ fontFamily: 'Inter' }}>
+                    <MenuItem key={type.id} value={type.id}>
                       {type.name}
                     </MenuItem>
                   ))}
                 </Select>
               </FormControl>
             </Grid>
-            <Grid item xs={12} sm={6} lg={3}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Số người"
-                value={guestCountFilter}
-                onChange={(e) => setGuestCountFilter(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleFilter()}
-                InputProps={{ inputProps: { min: 1 }, sx: { fontFamily: 'Inter' } }}
-                sx={{ bgcolor: 'white', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#DAA520' } }}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} lg={3}>
+            <Grid item xs={12} sm={6} md={4}>
               <Box sx={{ px: 2 }}>
                 <Typography sx={{ fontFamily: 'Inter', color: '#8B4513', mb: 1 }}>
-                  Giá mỗi đêm: {formatCurrency(priceRange[0])} - {formatCurrency(priceRange[1])}
+                  Khoảng giá: {formatCurrency(priceRange[0])} - {formatCurrency(priceRange[1])}
                 </Typography>
                 <Slider
                   value={priceRange}
                   onChange={(e, newValue) => setPriceRange(newValue)}
-                  valueLabelDisplay="off"
+                  valueLabelDisplay="auto"
+                  valueLabelFormat={formatCurrency}
                   min={0}
-                  max={10000000}
+                  max={5000000}
                   step={100000}
                   sx={{
                     color: '#DAA520',
-                    '& .MuiSlider-thumb': { bgcolor: '#8B4513' },
+                    '& .MuiSlider-thumb': { bgcolor: '#DAA520' },
                     '& .MuiSlider-track': { bgcolor: '#DAA520' },
-                    '& .MuiSlider-rail': { bgcolor: '#FFF8DC' },
                   }}
                 />
               </Box>
             </Grid>
-            <Grid item xs={12} sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+            <Grid item xs={12} sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
+              <Button
+                variant="outlined"
+                onClick={handleResetFilter}
+                sx={{
+                  borderColor: '#DAA520',
+                  color: '#DAA520',
+                  fontFamily: 'Inter',
+                  '&:hover': { borderColor: '#B8860B', color: '#B8860B' },
+                }}
+              >
+                Đặt lại
+              </Button>
               <Button
                 variant="contained"
                 onClick={handleFilter}
@@ -292,29 +296,14 @@ const Rooms = () => {
                   bgcolor: '#DAA520',
                   '&:hover': { bgcolor: '#B8860B' },
                   fontFamily: 'Inter',
-                  px: 4,
-                  boxShadow: '0 4px 12px rgba(218, 165, 32, 0.3)',
                 }}
               >
                 Tìm kiếm
               </Button>
-              <Button
-                variant="outlined"
-                onClick={handleResetFilter}
-                sx={{
-                  borderColor: '#DAA520',
-                  color: '#DAA520',
-                  '&:hover': { borderColor: '#B8860B', color: '#B8860B' },
-                  fontFamily: 'Inter',
-                  px: 4,
-                  boxShadow: '0 4px 12px rgba(218, 165, 32, 0.2)',
-                }}
-              >
-                Đặt lại
-              </Button>
             </Grid>
           </Grid>
-        </Card>
+        </Box>
+
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
             <CircularProgress sx={{ color: '#DAA520' }} />
@@ -332,38 +321,59 @@ const Rooms = () => {
             <Typography sx={{ mt: 4, mb: 2, fontFamily: 'Inter', color: '#8B4513', fontWeight: 500, textAlign: 'center' }}>
               Tìm thấy <strong>{totalCount}</strong> phòng phù hợp
             </Typography>
-            <Grid container spacing={3}>
+            <Grid container spacing={3} alignItems="stretch">
               {rooms.map((room) => (
                 <Grid item xs={12} sm={6} lg={4} key={room.id}>
                   <Card
                     sx={{
-                      borderRadius: 4,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      height: '100%',
+                      minHeight: '450px',
+                      borderRadius: 3,
                       overflow: 'hidden',
-                      boxShadow: '0 8px 24px rgba(139, 69, 19, 0.2)',
+                      boxShadow: '0 6px 20px rgba(139, 69, 19, 0.15)',
                       transition: 'transform 0.3s ease, box-shadow 0.3s ease',
-                      '&:hover': { transform: 'scale(1.05)', boxShadow: '0 12px 32px rgba(139, 69, 19, 0.3)' },
+                      '&:hover': { transform: 'scale(1.03)', boxShadow: '0 10px 28px rgba(139, 69, 19, 0.25)' },
                     }}
                   >
-                    <Carousel showThumbs={false} showStatus={false} infiniteLoop autoPlay interval={3000}>
-                      {roomImages[room.id]?.map((img, index) => (
-                        <div key={index}>
-                          <img src={img.url} alt={img.caption} style={{ height: '200px', objectFit: 'cover' }} />
-                          <p style={{ fontFamily: 'Inter', backgroundColor: 'rgba(0,0,0,0.7)', color: 'white', padding: '8px' }}>
-                            {img.caption}
-                          </p>
-                        </div>
-                      ))}
-                    </Carousel>
-                    <CardContent sx={{ bgcolor: '#FFF8DC', p: 3 }}>
-                      <Typography variant="h5" sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 600, mb: 1 }}>
+                    <Box sx={{ height: '200px', overflow: 'hidden', aspectRatio: '16/9' }}>
+                      <LazyImage
+                        src={roomImages[room.id]?.url || '/images/default-room.jpg'}
+                        alt={roomImages[room.id]?.caption || `Phòng ${room.room_number}`}
+                        width="100%"
+                        height="100%"
+                        skeletonHeight="200px"
+                        borderRadius={0}
+                        style={{ objectFit: 'cover' }}
+                      />
+                    </Box>
+                    <CardContent sx={{ bgcolor: '#FFF8DC', p: 2.5, flex: 1, display: 'flex', flexDirection: 'column' }}>
+                      <Typography
+                        variant="h6"
+                        sx={{
+                          fontFamily: 'Inter',
+                          color: '#8B4513',
+                          fontWeight: 600,
+                          mb: 1,
+                          display: '-webkit-box',
+                          WebkitLineClamp: 1,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden',
+                        }}
+                      >
                         {room.room_number} - {room.room_type_name || 'N/A'}
                       </Typography>
-                      <Typography variant="body2" sx={{ fontFamily: 'Inter', color: 'text.secondary', mb: 1 }}>
+                      <Typography variant="body2" sx={{ fontFamily: 'Inter', color: 'text.secondary', mb: 0.75 }}>
                         Giá: {parseFloat(room.room_type_price || 0).toLocaleString('vi-VN')} VND/đêm
                       </Typography>
                       <Typography
                         variant="body2"
-                        sx={{ fontFamily: 'Inter', color: room.status === 'available' ? '#2E8B57' : '#FF8C00', mb: 1 }}
+                        sx={{
+                          fontFamily: 'Inter',
+                          color: room.status === 'available' ? '#2E8B57' : '#FF8C00',
+                          mb: 0.75,
+                        }}
                       >
                         Trạng thái: {room.status === 'available' ? 'Còn trống' : room.status === 'booked' ? 'Đã đặt' : 'Đang sử dụng'}
                       </Typography>
@@ -372,15 +382,19 @@ const Rooms = () => {
                       </Typography>
                       {room.room_type?.amenities && (
                         <>
-                          <Typography variant="body2" sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 600, mb: 1 }}>
+                          <Typography variant="body2" sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 600, mb: 0.75 }}>
                             Tiện nghi:
                           </Typography>
-                          <List dense sx={{ mb: 2, pl: 2 }}>
+                          <List dense sx={{ mb: 1.5, pl: 2 }}>
                             {room.room_type.amenities.split(',').slice(0, 3).map((amenity, index) => (
                               <ListItem key={index} sx={{ py: 0 }}>
                                 <ListItemText
                                   primary={`• ${amenity.trim()}`}
-                                  primaryTypographyProps={{ fontFamily: 'Inter', color: 'text.secondary', fontSize: '0.875rem' }}
+                                  primaryTypographyProps={{
+                                    fontFamily: 'Inter',
+                                    color: 'text.secondary',
+                                    fontSize: '0.85rem',
+                                  }}
                                 />
                               </ListItem>
                             ))}
@@ -388,18 +402,30 @@ const Rooms = () => {
                               <ListItem sx={{ py: 0 }}>
                                 <ListItemText
                                   primary="• ..."
-                                  primaryTypographyProps={{ fontFamily: 'Inter', color: 'text.secondary', fontSize: '0.875rem' }}
+                                  primaryTypographyProps={{
+                                    fontFamily: 'Inter',
+                                    color: 'text.secondary',
+                                    fontSize: '0.85rem',
+                                  }}
                                 />
                               </ListItem>
                             )}
                           </List>
                         </>
                       )}
-                      <Box sx={{ display: 'flex', gap: 2 }}>
+                      <Box sx={{ display: 'flex', gap: 1.5, mt: 'auto' }}>
                         <Button
                           variant="outlined"
                           onClick={() => navigate(`/rooms/${room.id}`)}
-                          sx={{ borderColor: '#DAA520', color: '#DAA520', fontFamily: 'Inter', '&:hover': { borderColor: '#B8860B', color: '#B8860B' } }}
+                          sx={{
+                            borderColor: '#DAA520',
+                            color: '#DAA520',
+                            fontFamily: 'Inter',
+                            fontSize: '0.85rem',
+                            px: 2,
+                            py: 0.75,
+                            '&:hover': { borderColor: '#B8860B', color: '#B8860B' },
+                          }}
                         >
                           Chi tiết
                         </Button>
@@ -410,6 +436,9 @@ const Rooms = () => {
                             bgcolor: '#DAA520',
                             '&:hover': { bgcolor: '#B8860B' },
                             fontFamily: 'Inter',
+                            fontSize: '0.85rem',
+                            px: 2,
+                            py: 0.75,
                           }}
                         >
                           Đặt ngay
@@ -420,67 +449,47 @@ const Rooms = () => {
                 </Grid>
               ))}
             </Grid>
-            {totalPages > 1 && (
-              <Stack spacing={2} sx={{ mt: 6, mb: 4 }}>
-                <Pagination
-                  count={totalPages}
-                  page={currentPage}
-                  onChange={handlePageChange}
-                  color="primary"
-                  size="large"
-                  showFirstButton
-                  showLastButton
-                  sx={{
-                    '& .MuiPaginationItem-root': {
-                      fontFamily: 'Inter',
-                      '&.Mui-selected': { bgcolor: '#DAA520', color: 'white', '&:hover': { bgcolor: '#B8860B' } },
-                    },
-                  }}
-                />
-              </Stack>
-            )}
+            <Stack spacing={2} sx={{ mt: 4, alignItems: 'center' }}>
+              <Pagination
+                count={totalPages}
+                page={currentPage}
+                onChange={handlePageChange}
+                color="primary"
+                sx={{ '& .MuiPaginationItem-root': { fontFamily: 'Inter' } }}
+              />
+            </Stack>
           </>
         )}
-        <Dialog
-          open={loginDialogOpen}
-          onClose={handleCloseLoginDialog}
-          maxWidth="xs"
-          fullWidth
-          sx={{ '& .MuiDialog-paper': { borderRadius: 4, bgcolor: '#FFF8DC', maxWidth: { xs: '90vw', sm: '400px' } } }}
-        >
-          <DialogTitle sx={{ fontFamily: 'Inter', color: '#8B4513', fontWeight: 600 }}>
-            Yêu Cầu Đăng Nhập
-            <IconButton
-              onClick={handleCloseLoginDialog}
-              sx={{ position: 'absolute', right: 8, top: 8, color: '#8B4513' }}
-            >
-              <CloseIcon />
-            </IconButton>
-          </DialogTitle>
-          <DialogContent>
-            <Typography sx={{ fontFamily: 'Inter', color: '#8B4513', mb: 2 }}>
-              Bạn cần đăng nhập để tiếp tục đặt phòng.
-            </Typography>
-            {selectedRoom && (
-              <Typography variant="body2" sx={{ fontFamily: 'Inter', color: 'text.secondary' }}>
-                Phòng: <strong>{selectedRoom.room_number} ({selectedRoom.room_type_name || 'N/A'})</strong>
-              </Typography>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={handleCloseLoginDialog} sx={{ fontFamily: 'Inter', color: '#DAA520' }}>
-              Hủy
-            </Button>
-            <Button
-              onClick={handleLoginRedirect}
-              variant="contained"
-              sx={{ bgcolor: '#DAA520', '&:hover': { bgcolor: '#B8860B' }, fontFamily: 'Inter' }}
-            >
-              Đăng nhập
-            </Button>
-          </DialogActions>
-        </Dialog>
       </Container>
+      <Dialog
+        open={loginDialogOpen}
+        onClose={handleCloseLoginDialog}
+        sx={{ '& .MuiDialog-paper': { borderRadius: 3, p: 2 } }}
+      >
+        <DialogTitle sx={{ fontFamily: 'Inter', color: '#8B4513' }}>
+          Yêu cầu đăng nhập
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontFamily: 'Inter', color: 'text.secondary' }}>
+            Vui lòng đăng nhập để đặt phòng.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={handleCloseLoginDialog}
+            sx={{ fontFamily: 'Inter', color: '#8B4513' }}
+          >
+            Hủy
+          </Button>
+          <Button
+            onClick={handleLoginRedirect}
+            variant="contained"
+            sx={{ bgcolor: '#DAA520', '&:hover': { bgcolor: '#B8860B' }, fontFamily: 'Inter' }}
+          >
+            Đăng nhập
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
