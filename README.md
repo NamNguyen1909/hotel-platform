@@ -12,7 +12,6 @@
 - [Architecture](#architecture)
 - [Setup Instructions](#setup-instructions)
 - [API Endpoints](#api-endpoints)
-- [Automated Task Scheduling](#automated-task-scheduling)
 - [Deployment](#deployment)
 - [License](#license)
 - [Contributing](#contributing)
@@ -30,7 +29,7 @@ The **Hotel Platform Management System** is a comprehensive solution designed to
 - **Revenue Analytics**: Advanced reporting with visual dashboards for occupancy rates, revenue analysis, and performance metrics
 - **Automated Operations**: Scheduled tasks for room status updates, booking confirmations, and notification management
 - **Smart Pricing**: Dynamic pricing algorithm with extra guest surcharges and promotional discount codes
-- **Real-time Notifications**: WebSocket-based notifications for booking updates and system alerts
+- **Real-time Updates**: Smart polling-based notifications for booking updates and system alerts
 - **Image Management**: Cloudinary integration for efficient room photo storage and delivery
 
 ## Technologies Used
@@ -51,13 +50,13 @@ The **Hotel Platform Management System** is a comprehensive solution designed to
 ### 💳 **Payment Integration**
 - **VNPay**: Vietnamese payment gateway for secure transaction processing
 
-### 🔔 **Notifications & Scheduling**
-- **WebSocket**: Real-time bidirectional communication for live notifications
+### 🔔 **Real-time Updates & Scheduling**
+- **Smart Polling**: Intelligent polling system with Page Visibility API for real-time updates
 - **Cron-job.org**: External cron service for automated task scheduling and execution
 
 ### 🚀 **Hosting & Deployment**
 - **Render.com**: Cloud platform for hosting both backend and frontend services
-- **PostgreSQL on Render**: Managed database service with automatic backups
+- **PostgreSQL on Render**: Managed database service for production
 - **WhiteNoise**: Static file serving for Django in production
 
 ### �️ **Development Tools**
@@ -79,13 +78,12 @@ The **Hotel Platform Management System** is a comprehensive solution designed to
 - **Automated Status Management**: Daily room status updates and booking confirmation workflows
 - **Promotional System**: Flexible discount code creation with customer segment targeting
 - **Analytics Dashboard**: Real-time insights into occupancy rates, revenue trends, and operational metrics
+- **Smart Polling Updates**: Page Visibility API-based polling for efficient real-time data updates
 
 ### 🔒 **Security & Performance**
 - **Comprehensive Authentication**: JWT-based security with role-based access control
-- **API Rate Limiting**: Protection against abuse with request throttling
 - **CORS Configuration**: Secure cross-origin resource sharing for production deployment
 - **Environment-based Configuration**: Separate settings for development, staging, and production
-- **Automated Backup**: Scheduled database backups and data integrity checks
 
 ## Architecture
 
@@ -176,7 +174,7 @@ npm run dev  # → Automatically starts both backend and frontend!
 4. **Configure Environment Variables**:
    Create a `.env` file in the `hotelplatformapi` directory:
    ```env
-   # Database Configuration
+   # Database Configuration (optional - defaults to SQLite for development)
    DATABASE_URL=postgresql://username:password@localhost:5432/hotel_platform_db
    
    # Django Settings
@@ -184,21 +182,17 @@ npm run dev  # → Automatically starts both backend and frontend!
    DEBUG=True
    ALLOWED_HOSTS=localhost,127.0.0.1
    
-   # Payment Integration
+   # Payment Integration (optional for development)
    VNPAY_TMN_CODE=your-vnpay-tmn-code
    VNPAY_HASH_SECRET=your-vnpay-hash-secret-key
-   VNPAY_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
    
-   # Cloud Services
+   # Cloud Services (optional for development)
    CLOUDINARY_CLOUD_NAME=your-cloudinary-cloud-name
    CLOUDINARY_API_KEY=your-cloudinary-api-key
    CLOUDINARY_API_SECRET=your-cloudinary-api-secret
    
    # Automation
    CRON_API_KEY=hotel-platform-cron-2025
-   
-   # Frontend URL (for CORS)
-   FRONTEND_URL=http://localhost:5173
    ```
    
    **Note**: For local development, you can use SQLite by omitting `DATABASE_URL`. The project will automatically configure SQLite for development.
@@ -238,11 +232,7 @@ npm run dev  # → Automatically starts both backend and frontend!
    Create a `.env.local` file in the `hotelplatformweb-vite` directory:
    ```env
    # API Configuration
-   VITE_API_BASE_URL=http://localhost:8000/api
-   VITE_BASE_URL=http://localhost:8000
-   
-   # Payment Configuration
-   VITE_VNPAY_RETURN_URL=http://localhost:5173/payment-result
+   VITE_API_BASE_URL=http://localhost:8000
    
    # Application Settings
    VITE_APP_NAME=Hotel Platform
@@ -298,138 +288,33 @@ This script will:
 - Clean up test data automatically
 ## API Endpoints
 
-### Authentication
-- `POST /api/auth/login/`: User authentication with JWT token generation
-- `POST /api/auth/register/`: User registration for customers
-- `POST /api/auth/refresh/`: JWT token refresh
-- `POST /api/auth/logout/`: User logout and token invalidation
+The system provides a comprehensive REST API. Here are the main endpoint categories:
 
-### Users & Profiles
-- `GET /api/users/`: Retrieve all users (admin only)
-- `POST /api/users/`: Create new user account
-- `GET /api/users/profile/`: Get current user profile
-- `PUT /api/users/profile/`: Update user profile information
-- `PATCH /api/users/profile/`: Partially update user profile
-- `POST /api/users/change-password/`: Change user password
-- `GET /api/users/{id}/bookings/`: Get user's booking history
+### 🔐 **Authentication**
+- `POST /api/auth/token/`: User login with JWT token generation
+- `POST /api/auth/token/refresh/`: JWT token refresh
+- `POST /api/users/register/`: User registration
 
-### Rooms & Room Types
-- `GET /api/rooms/`: List all available rooms with filtering
-- `POST /api/rooms/`: Create new room (admin/staff only)
-- `GET /api/rooms/{id}/`: Get detailed room information
-- `PUT /api/rooms/{id}/`: Update room details (admin/staff only)
-- `DELETE /api/rooms/{id}/`: Delete room (admin only)
-- `GET /api/room-types/`: List all room types
-- `POST /api/room-types/`: Create new room type (admin only)
-- `GET /api/rooms/search/`: Advanced room search with filters
-
-### Bookings & Reservations
-- `GET /api/bookings/`: List all bookings (admin/staff only)
+### 🏨 **Core Hotel Management**
+- `GET /api/room-types/`: List available room types
+- `GET /api/rooms/`: List rooms with availability filtering
 - `POST /api/bookings/`: Create new booking
-- `GET /api/bookings/{id}/`: Get booking details
-- `PUT /api/bookings/{id}/`: Update booking (admin/staff only)
-- `PATCH /api/bookings/{id}/`: Partially update booking
-- `DELETE /api/bookings/{id}/`: Cancel booking
-- `POST /api/bookings/{id}/check-in/`: Process guest check-in
-- `POST /api/bookings/{id}/check-out/`: Process guest check-out
-- `GET /api/bookings/my-bookings/`: Get current user's bookings
+- `GET /api/bookings/my-bookings/`: Get user's bookings
+- `POST /api/bookings/{id}/check-in/`: Process check-in
+- `POST /api/bookings/{id}/check-out/`: Process check-out
 
-### Payments & Transactions
-- `GET /api/payments/`: List all payments (admin only)
-- `POST /api/payments/vnpay-create/`: Create VNPay payment URL
-- `GET /api/payments/vnpay-return/`: Handle VNPay payment return
-- `POST /api/payments/vnpay-ipn/`: VNPay Instant Payment Notification webhook
-- `GET /api/payments/{id}/`: Get payment details
-- `POST /api/payments/{id}/refund/`: Process payment refund (admin only)
+### 💳 **Payment Processing**
+- `POST /api/vnpay/create-payment/`: Create VNPay payment URL
+- `GET /api/vnpay/redirect/`: Handle payment return
 
-### Analytics & Reports
-- `GET /api/analytics/dashboard/`: Get dashboard statistics (admin/staff only)
-- `GET /api/analytics/revenue/`: Revenue analytics with date filtering
-- `GET /api/analytics/occupancy/`: Room occupancy statistics
-- `GET /api/analytics/bookings/`: Booking analytics and trends
-- `GET /api/analytics/customers/`: Customer analytics and segmentation
+### 📊 **Analytics & Admin**
+- `GET /api/stats/`: System statistics and analytics
+- `POST /api/tasks/update-room-status/`: Automated room status updates
 
-### Discount Codes & Promotions
-- `GET /api/discounts/`: List all discount codes (admin/staff only)
-- `POST /api/discounts/`: Create new discount code (admin only)
-- `GET /api/discounts/{code}/validate/`: Validate discount code
-- `PUT /api/discounts/{id}/`: Update discount code (admin only)
-- `DELETE /api/discounts/{id}/`: Delete discount code (admin only)
-
-### System & Automation
-- `POST /api/tasks/update-room-status/`: Automated room status update (cron job)
-- `GET /api/tasks/status/`: Get system task status
-- `GET /api/health/`: Health check endpoint
-- `GET /api/version/`: Get API version information
-
-## Automated Task Scheduling
-
-The system includes automated task scheduling for operational efficiency:
-
-### Room Status Automation
-**Endpoint**: `POST /api/tasks/update-room-status/`
-
-**Purpose**: Automatically updates room statuses and booking confirmations daily
-
-**Functionality**:
-- Updates room status from "available" to "booked" for confirmed bookings on check-in date
-- Marks overdue bookings as "no-show" and releases associated rooms
-- Processes future bookings without affecting their status
-- Provides detailed logging and error reporting
-
-**Security**: Protected with API key authentication (`X-API-Key` header)
-
-**Cron Schedule**: 
-```bash
-# Daily at 6:00 AM UTC (1:00 PM Vietnam time)
-0 6 * * *
-```
-
-**Implementation via Cron-job.org**:
-```bash
-# Cron job configuration
-URL: https://hotel-platform-api.onrender.com/api/tasks/update-room-status/
-Method: POST
-Headers: 
-  Content-Type: application/json
-  X-API-Key: hotel-platform-cron-2025
-Body: 
-{
-  "api_key": "hotel-platform-cron-2025",
-  "trigger": "scheduled",
-  "timestamp": "2025-01-01T06:00:00Z"
-}
-```
-
-**Testing**: Use the included test script to validate automation:
-```bash
-cd hotelplatformapi
-python test_room_status_task.py
-```
-
-**Response Format**:
-```json
-{
-  "success": true,
-  "message": "Room status update completed successfully",
-  "timestamp": "2025-01-01T06:00:00Z",
-  "summary": {
-    "total_rooms_updated": 5,
-    "bookings_processed": 8,
-    "no_show_bookings": 2,
-    "errors_count": 0
-  },
-  "updated_rooms": [
-    {
-      "room_number": "101",
-      "booking_id": 123,
-      "old_status": "available",
-      "new_status": "booked",
-      "check_in_date": "2025-01-01T14:00:00Z"
-    }
-  ]
-}
-```
+### 📚 **Complete API Documentation**
+For detailed API documentation with request/response examples, visit:
+- **Swagger UI**: [https://hotel-platform-api-sduw.onrender.com/swagger/](https://hotel-platform-api-sduw.onrender.com/swagger/)
+- **ReDoc**: [https://hotel-platform-api-sduw.onrender.com/redoc/](https://hotel-platform-api-sduw.onrender.com/redoc/)
 
 ## Deployment
 
@@ -479,29 +364,26 @@ The application is configured for automatic deployment on Render.com with the fo
 
 2. **Environment Variables**:
    ```env
-   VITE_API_BASE_URL=https://hotel-platform-api.onrender.com/api
-   VITE_BASE_URL=https://hotel-platform-api.onrender.com
-   VITE_VNPAY_RETURN_URL=https://hotel-platform-web.onrender.com/payment-result
+   VITE_API_BASE_URL=https://hotel-platform-api-sduw.onrender.com
    ```
 
 #### Database Setup
 - **PostgreSQL**: Automatically provisioned by Render.com
 - **Migrations**: Run automatically during deployment
-- **Backups**: Automated daily backups included
 
 #### Cron Job Configuration
 Set up automated tasks on **cron-job.org**:
 1. Create account on cron-job.org
 2. Add new cron job with:
-   - **URL**: `https://hotel-platform-api.onrender.com/api/tasks/update-room-status/`
+   - **URL**: `https://hotel-platform-api-sduw.onrender.com/api/tasks/update-room-status/`
    - **Schedule**: `0 6 * * *` (daily at 6 AM UTC)
    - **Method**: POST
    - **Headers**: `X-API-Key: hotel-platform-cron-2025`
 
 #### Access URLs
 - **Frontend**: https://hotel-platform-web.onrender.com
-- **API**: https://hotel-platform-api.onrender.com/api
-- **Admin Panel**: https://hotel-platform-api.onrender.com/admin
+- **API**: https://hotel-platform-api-sduw.onrender.com
+- **Admin Panel**: https://hotel-platform-api-sduw.onrender.com/admin
 
 ### Local Development Deployment
 For local testing of production-like environment:
@@ -578,7 +460,7 @@ For inquiries, support, or collaboration opportunities, please contact:
 ### Project Links
 - **Repository**: [GitHub](https://github.com/NamNguyen1909/hotel-platform)
 - **Live Demo**: [Hotel Platform](https://hotel-platform-web.onrender.com)
-- **API Documentation**: [API Docs](https://hotel-platform-api.onrender.com/swagger)
+- **API Documentation**: [API Docs](https://hotel-platform-api-sduw.onrender.com/swagger)
 
 ---
 

@@ -1890,8 +1890,8 @@ def create_payment_url(request):
     import pytz
     tz = pytz.timezone("Asia/Ho_Chi_Minh")
 
-    vnp_TmnCode = 'GUPETCYO'
-    vnp_HashSecret = 'E2G0Y153XRTW37LVRKW8DJ1TGEQ9RK6I'
+    vnp_TmnCode = os.environ.get('VNPAY_TMN_CODE')
+    vnp_HashSecret = os.environ.get('VNPAY_HASH_SECRET')
     vnp_Url = 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html'
     # Sử dụng environment variable cho backend URL
     backend_base_url = os.environ.get('BACKEND_URL', 'http://127.0.0.1:8000')
