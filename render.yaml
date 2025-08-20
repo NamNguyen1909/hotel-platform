@@ -14,7 +14,7 @@ services:
       pip install -r requirements.txt
       python manage.py collectstatic --noinput
       python manage.py migrate
-      # python manage.py seed
+      python manage.py seed
     startCommand: gunicorn --workers 2 --bind 0.0.0.0:$PORT --timeout 30 --keep-alive 2 --max-requests 1000 --max-requests-jitter 50 hotelplatformapi.wsgi:application
     envVars:
       - key: DATABASE_URL
