@@ -1053,6 +1053,7 @@ class BookingViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAP
                         logger.error(f"VNPay integration error: {str(vnpay_error)}")
                         # Delete the payment since VNPay failed
                         payment.delete()
+                        logger.info(f"BACKEND_URL env: {os.environ.get('BACKEND_URL')}")
                         return Response({
                             "error": f"Lỗi tạo thanh toán VNPay: {str(vnpay_error)}"
                         }, status=status.HTTP_400_BAD_REQUEST)
